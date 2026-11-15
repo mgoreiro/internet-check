@@ -16,6 +16,7 @@ import charts
 import common as c
 import db
 import export
+import heartbeat
 import info
 import lan
 import quiet
@@ -49,7 +50,7 @@ MENU = {
 }
 # Acciones que solo puede pedir un administrador
 ADMIN_ONLY = {"wol", "reboot", "reboot_yes", "cancel", "/encender", "/reiniciar",
-              "presence", "/presencia", "quiet", "/silencio", "/nombrar"}
+              "presence", "/presencia", "quiet", "/silencio", "/nombrar", "/latido"}
 COMMANDS = [
     {"command": "menu", "description": "Mostrar el menú"},
     {"command": "estado", "description": "Estado de la conexión"},
@@ -68,6 +69,7 @@ COMMANDS = [
     {"command": "presencia", "description": "Quién está en casa"},
     {"command": "nombrar", "description": "Poner nombre a un dispositivo"},
     {"command": "silencio", "description": "Modo no molestar"},
+    {"command": "latido", "description": "Estado, prueba y pausa del latido de alarma"},
     {"command": "encender", "description": "Encender un equipo (Wake-on-LAN)"},
     {"command": "reiniciar", "description": "Reiniciar la Orange Pi"},
     {"command": "ayuda", "description": "Ayuda y lista de comandos"},
@@ -297,6 +299,40 @@ def do_quiet_cmd(args=""):
         c.send_telegram("🌙 Uso:  /silencio <horas>   (por ejemplo /silencio 8)\n/silencio off para desactivarlo.", menu())
 
 
+def _heartbeat_keyboard():
+    return {"inline_keyboard": [[
+        {"text": "🔔 Probar envío", "callback_data": "hb:test"},
+        {"text": "⏸️ Pausar 5 min", "callback_data": "hb:pause"},
+        {"text": "▶️ Reanudar", "callback_data": "hb:resume"}]]}
+
+
+def do_heartbeat(args="", action=None):
+    """/latido [prueba | pausa [minutos] | reanudar]: estado del latido de alarma y forma de probarla."""
+    if not _require_admin():
+        return
+    word, _, rest = (action or args).strip().lower().partition(" ")
+    if not heartbeat.URL or not word:
+        c.send_telegram(heartbeat.status_text(), _heartbeat_keyboard() if heartbeat.URL else menu())
+    elif word in ("prueba", "test"):
+        ok = heartbeat.ping()
+        c.send_telegram(f"{'✅ Latido entregado' if ok else '❌ No se pudo entregar el latido'} a "
+                        f"{heartbeat.host()}.", _heartbeat_keyboard())
+    elif word in ("pausa", "pause"):
+        try:
+            minutes = float(rest) if rest else 5.0
+        except ValueError:
+            minutes = 5.0
+        until = heartbeat.pause(minutes)
+        c.send_telegram(f"⏸️ Latidos pausados hasta las {time.strftime('%H:%M', time.localtime(until))}.\n"
+                        "Pasado el margen que configuraste en el servicio, te llegará su alarma por Telegram. "
+                        "Se reanudan solos al acabar, o antes con /latido reanudar.", _heartbeat_keyboard())
+    elif word in ("reanudar", "resume"):
+        heartbeat.resume()
+        c.send_telegram("▶️ Latidos reanudados.\n" + heartbeat.status_text(), _heartbeat_keyboard())
+    else:
+        c.send_telegram("💓 Uso:  /latido  ·  /latido prueba  ·  /latido pausa [minutos]  ·  /latido reanudar", menu())
+
+
 # ---------------------------------------------------------------- administración
 
 def do_wol_menu():
@@ -399,7 +435,8 @@ ACTIONS = {
 
 
 # Comandos que reciben texto detrás: /nombrar <IP> <nombre>, /presencia <nombre>, /silencio <horas>
-ARG_COMMANDS = {"/nombrar": do_name, "/presencia": do_presence, "/silencio": do_quiet_cmd}
+ARG_COMMANDS = {"/nombrar": do_name, "/presencia": do_presence, "/silencio": do_quiet_cmd,
+                "/latido": do_heartbeat}
 
 
 def resolve(key, args=""):
@@ -412,6 +449,8 @@ def resolve(key, args=""):
     if arg:
         if name == "dnd" and arg in ("0", "2", "8"):
             return lambda: do_quiet_set(int(arg))
+        if name == "hb" and arg in ("test", "pause", "resume"):
+            return lambda: do_heartbeat(action={"test": "prueba", "pause": "pausa 5", "resume": "reanudar"}[arg])
         if name == "wol" and arg.isdigit():
             return lambda: do_wol_send(int(arg))
         if name == "report" and arg in ("24", "168", "720"):
@@ -425,7 +464,7 @@ def resolve(key, args=""):
 
 
 def is_admin_only(key) -> bool:
-    return bool(key) and (key in ADMIN_ONLY or key.startswith(("wol:", "dnd:")))
+    return bool(key) and (key in ADMIN_ONLY or key.startswith(("wol:", "dnd:", "hb:")))
 
 
 def _spawn(fn, chat, role):

@@ -2,6 +2,14 @@
 
 Formato basado en [Keep a Changelog](https://keepachangelog.com/es-ES/1.1.0/).
 
+## [1.7.1] — 2026-11-15
+### Añadido
+- Comando `/latido`: estado del latido de la alarma de caída, envío de prueba y pausa de hasta 60
+  minutos para probar la alarma sin tocar cables.
+### Eliminado
+- `tools/prueba_bot_a_bot.sh`: la alarma solo con Telegram no es viable hoy (Bot-to-Bot Communication
+  Mode no aparece en los ajustes de BotFather); se usa el latido a un servicio externo.
+
 ## [1.7.0] — 2026-11-15
 ### Añadido
 - Vigilancia de equipos y servicios propios (`WATCH_TARGETS`: TCP, ping y HTTP), con aviso de caída y

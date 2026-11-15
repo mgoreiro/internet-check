@@ -49,8 +49,27 @@ def ping(url=None) -> bool:
     return True
 
 
+MAX_PAUSE_MINUTES = 60
+_pause = {"until": 0.0}  # los latidos se detienen hasta esta hora (solo en memoria: un reinicio la cancela)
+
+
+def pause(minutes) -> float:
+    """Detiene los latidos para poder probar la alarma sin tocar cables. Se reanudan solos al acabar."""
+    minutes = max(1.0, min(float(minutes), MAX_PAUSE_MINUTES))
+    _pause["until"] = time.time() + minutes * 60
+    return _pause["until"]
+
+
+def resume():
+    _pause["until"] = 0.0
+
+
+def is_paused() -> bool:
+    return time.time() < _pause["until"]
+
+
 def tick():
-    if URL:
+    if URL and not is_paused():
         ping()
 
 
@@ -58,8 +77,24 @@ def status_line():
     """Línea para /estado, o None si el latido no está configurado."""
     if not URL:
         return None
+    if is_paused():
+        return f"⏸️ Latido a {host()}: pausado hasta las {time.strftime('%H:%M', time.localtime(_pause['until']))}"
     if _state["ok"] is None:
         return f"💓 Latido a {host()}: aún sin enviar"
     ago = c.fmt_ago(time.time() - _state["ok"])
     return f"💓 Latido a {host()}: " + ("correcto" if not _state["fail"] else f"{_state['fail']} fallos seguidos") + \
         f" (último hace {ago})"
+
+
+def status_text():
+    """Texto de /latido: estado detallado, o cómo configurarlo si no hay URL."""
+    if not URL:
+        return ("💓 El latido no está configurado.\n\n"
+                "Es la alarma de «se ha caído la conexión»: la Pi avisa cada minuto a un servicio externo y es "
+                "ese servicio quien avisa a Telegram cuando dejan de llegar los latidos.\n"
+                "Pasos en el README, sección «Alarma cuando se cae la conexión (latido)». "
+                "Después, en /etc/internet-check/config.env:\nHEARTBEAT_URL=https://hc-ping.com/tu-codigo-secreto")
+    lines = [status_line(), f"Cada {INTERVAL:g} s a {host()} (la URL no se muestra: lleva un código secreto)."]
+    if _state["sent"]:
+        lines.append(f"Latidos entregados desde el arranque: {_state['sent']}.")
+    return "\n".join(lines)

@@ -81,6 +81,7 @@ def bot_help() -> str:
         "🏠 /presencia — quién está en casa (admin)\n"
         "🏷️ /nombrar <IP o MAC> <nombre> — pone nombre a un dispositivo (admin)\n"
         "🌙 /silencio [horas|off] — modo no molestar (admin)\n"
+        "💓 /latido [prueba|pausa|reanudar] — latido de la alarma de caída (admin)\n"
         "📰 /informe — resumen de 24 h, semana o mes\n"
         "📤 /exportar — histórico en CSV (zip)\n"
         "🔎 /actualizar — busca una versión nueva\n"

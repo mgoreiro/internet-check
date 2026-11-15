@@ -47,14 +47,14 @@ controlado por un **bot de Telegram** y por una **TUI** al estilo Turbo Vision.
 El paquete se genera en cualquier máquina, también macOS (no necesita `dpkg-deb`):
 
 ```bash
-./build-deb.sh 1.7.0
-scp internet-check_1.7.0_all.deb usuario@orangepi:
+./build-deb.sh 1.7.1
+scp internet-check_1.7.1_all.deb usuario@orangepi:
 ```
 
 En la Orange Pi:
 
 ```bash
-sudo apt install ./internet-check_1.7.0_all.deb
+sudo apt install ./internet-check_1.7.1_all.deb
 sudo nano /etc/internet-check/bot.env      # token y chat id
 sudo systemctl restart internet-check
 journalctl -u internet-check -f
@@ -152,6 +152,7 @@ Escribe `/menu` (o cualquier texto) y aparece el menú con botones. También hay
 | 🏠 Presencia | `/presencia [nombre]` | Quién está en casa; con un nombre, vigila o deja de vigilar a ese dispositivo (admin) |
 | 🏷️ Nombrar | `/nombrar <IP o MAC> <nombre>` | Pone nombre a un dispositivo; sin nombre, lo borra (admin) |
 | 🌙 No molestar | `/silencio [horas\|off]` | Retiene los avisos poco urgentes durante unas horas (admin) |
+| 💓 Latido | `/latido [prueba\|pausa [min]\|reanudar]` | Estado del latido de la alarma de caída, envío de prueba y pausa para probar la alarma (admin) |
 | ❓ Ayuda | `/ayuda` | Lista de comandos y de avisos automáticos |
 | ℹ️ Acerca de | `/acerca` | Versión, autor, licencia y repositorio |
 | 📡 Dispositivos | `/dispositivos` | Escanea la red: IP, fabricante, MAC, nombre NetBIOS y DNS; marca los nuevos con 🆕 |
@@ -282,6 +283,11 @@ También sirve cualquier servicio que reciba una petición GET periódica, como 
 *Push* de Uptime Kuma. La URL lleva un código secreto: no se escribe nunca en los logs. `/estado`
 muestra si el latido se está entregando.
 
+**Probar la alarma sin tocar cables:** escribe `/latido pausa 5` al bot. Los latidos se detienen
+5 minutos (máximo 60; se reanudan solos, o antes con `/latido reanudar`) y, pasado el margen que
+configuraste en el servicio, te llegará su alarma por Telegram. `/latido prueba` envía un latido
+suelto y dice si se entregó. La pausa solo vive en memoria: un reinicio del servicio la cancela.
+
 ## TUI
 
 ```bash
@@ -354,7 +360,7 @@ python3 monitor.py
 python3 tui.py
 
 # Paquete .deb
-./build-deb.sh 1.7.0
+./build-deb.sh 1.7.1
 
 # Regenerar la base de fabricantes con los CSV del IEEE
 python3 -I tools/build_oui.py <carpeta con oui.csv, mam.csv y oui36.csv>

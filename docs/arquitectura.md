@@ -178,6 +178,10 @@ esperan a que termine.
 
 ## Latido
 
+El comando `/latido` (solo administrador) muestra el estado, envía un latido de prueba y permite
+**pausar** el envío hasta 60 minutos (`heartbeat.pause`) para ensayar la alarma sin tocar la red; la
+pausa caduca sola y solo existe en memoria.
+
 `heartbeat.tick` hace una petición GET a `HEARTBEAT_URL` cada `HEARTBEAT_SECONDS`. Es el único modo de
 tener una alarma **durante** la caída, porque con Internet cortado la Pi no puede escribir a Telegram:
 el servicio externo es quien cuenta el tiempo sin latidos y avisa. La URL lleva un código secreto, así

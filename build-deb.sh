@@ -4,7 +4,7 @@
 # Genera internet-check_<version>_all.deb (funciona en macOS y Linux, sin dpkg-deb)
 set -e
 cd "$(dirname "$0")"
-VERSION="${1:-1.7.0}"
+VERSION="${1:-1.7.1}"
 OUT="internet-check_${VERSION}_all.deb"
 B="$(mktemp -d)"; trap 'rm -rf "$B"' EXIT
 export COPYFILE_DISABLE=1
