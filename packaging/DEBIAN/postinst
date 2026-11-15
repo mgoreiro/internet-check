@@ -1,0 +1,32 @@
+#!/bin/sh
+set -e
+if [ "$1" = "configure" ]; then
+    CFG=/etc/internet-check/config.env
+    BOT=/etc/internet-check/bot.env
+    SHARE=/usr/share/internet-check
+
+    # Las configuraciones NO son conffiles: se crean una vez y nunca se pisan al actualizar
+    mkdir -p /etc/internet-check
+
+    # Migración (<= 1.2.x): las credenciales vivían en config.env
+    if [ ! -f "$BOT" ] && [ -f "$CFG" ] && grep -Eq '^TELEGRAM_(TOKEN|CHAT_ID)=' "$CFG"; then
+        grep -E '^TELEGRAM_(TOKEN|CHAT_ID)=' "$CFG" > "$BOT"
+        grep -Ev '^TELEGRAM_(TOKEN|CHAT_ID)=' "$CFG" > "$CFG.tmp" || true
+        mv "$CFG.tmp" "$CFG"
+        echo "internet-check: credenciales del bot movidas a $BOT"
+    fi
+    [ -f "$BOT" ] || cp "$SHARE/bot.env.example" "$BOT"
+    [ -f "$CFG" ] || cp "$SHARE/config.env.example" "$CFG"
+    chmod 600 "$BOT"
+    chmod 644 "$CFG"
+
+    systemctl daemon-reload || true
+    systemctl enable internet-check.service || true
+    if grep -Eq '^TELEGRAM_TOKEN=.+' "$BOT" && ! grep -q 'tu-token-de-BotFather' "$BOT"; then
+        systemctl restart internet-check.service || true
+    else
+        echo "internet-check: edita $BOT con el token y el chat id y ejecuta:"
+        echo "    sudo systemctl restart internet-check"
+    fi
+fi
+exit 0

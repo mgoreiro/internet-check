@@ -1,0 +1,14 @@
+Package: internet-check
+Version: @VERSION@
+Section: net
+Priority: optional
+Architecture: all
+Depends: python3 (>= 3.7), systemd
+Recommends: sudo
+Maintainer: mgoreiro <mgoreiro@gmail.com>
+Homepage: https://github.com/mgoreiro/internet-check
+Description: Monitor de conexión a Internet con bot de Telegram y TUI
+ Comprueba periódicamente la conectividad y avisa por Telegram al
+ recuperarse tras un corte. Incluye un bot con menú (estado, test de
+ velocidad, IP pública, historiales, dispositivos de la red, Wake-on-LAN
+ y reinicio remoto) y una interfaz de terminal estilo Turbo Vision.

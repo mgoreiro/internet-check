@@ -1,0 +1,16 @@
+# SPDX-License-Identifier: GPL-3.0-or-later
+# Copyright (C) 2026 mgoreiro <mgoreiro@gmail.com>
+[Unit]
+Description=Monitor de conexión a Internet con aviso por Telegram
+After=network.target
+
+[Service]
+EnvironmentFile=-/etc/internet-check/bot.env
+EnvironmentFile=-/etc/internet-check/config.env
+ExecStart=/usr/bin/python3 /usr/lib/internet-check/monitor.py
+Restart=always
+RestartSec=5
+StateDirectory=internet-check
+
+[Install]
+WantedBy=multi-user.target

@@ -1,0 +1,9 @@
+#!/bin/sh
+set -e
+if [ "$1" = "remove" ] || [ "$1" = "upgrade" ]; then
+    systemctl stop internet-check.service || true
+fi
+if [ "$1" = "remove" ]; then
+    systemctl disable internet-check.service || true
+fi
+exit 0

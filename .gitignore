@@ -1,0 +1,5 @@
+# Paquetes generados (se publican como release, no en el árbol)
+*.deb
+__pycache__/
+*.pyc
+.DS_Store
