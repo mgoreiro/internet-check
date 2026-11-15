@@ -14,8 +14,10 @@ import sys
 import textwrap
 
 import common as c
+import export
 import info
 import reports
+import updates
 
 # ---------------------------------------------------------------- datos
 
@@ -40,9 +42,10 @@ MENUS = [
     ("Velocidad", [("~T~est de velocidad", "F3", "speed"), ("~H~istórico", "F6", "speeds")]),
     ("Red", [("~D~ispositivos", "F7", "devices")]),
     ("Informes", [("~D~iario (24 h)", "", "report24"), ("~S~emanal (7 días)", "", "report168"),
-                  ("~M~ensual (30 días)", "", "report720")]),
+                  ("~M~ensual (30 días)", "", "report720"),
+                  ("~E~xportar CSV (30 días)", "", "export30"), ("Exportar CSV (~t~odo)", "", "export0")]),
     ("Ayuda", [("~C~ontenido", "F1", "help"), ("~T~eclas y atajos", "", "keys"),
-               ("~A~cerca de...", "", "about")]),
+               ("~B~uscar actualización", "", "update"), ("~A~cerca de...", "", "about")]),
 ]
 FKEYS = {
     curses.KEY_F1: "help", curses.KEY_F2: "status", curses.KEY_F3: "speed", curses.KEY_F4: "ip",
@@ -411,6 +414,39 @@ def about():
     msgbox("Acerca de", info.about_lines())
 
 
+def run_update():
+    busy("Buscando una versión nueva...")
+    rel, newer, error = updates.check()
+    if error:
+        msgbox("Actualización", [f"No se pudo consultar la última versión: {error}"], error=True)
+        return
+    msgbox("Actualización", updates.message(rel, newer).splitlines())
+
+
+def run_export(days):
+    """Genera el zip de CSV y lo envía al bot; sin bot, lo guarda en la carpeta actual."""
+    busy("Preparando la exportación...")
+    try:
+        data, counts = export.build_zip(days or None)
+    except Exception as e:  # noqa: BLE001
+        msgbox("Error", [f"No se pudo exportar: {e}"], error=True)
+        return
+    name = export.filename(days or None)
+    lines = export.summary_text(counts, days or None).splitlines()
+    if c.TOKEN and c.CHAT_ID:
+        busy("Enviando al bot...")
+        sent = c.send_document(data, name, lines[0], to=c.CHAT_ID, content_type="application/zip")
+        lines += ["", "Enviado al bot." if sent else "No se pudo enviar al bot."]
+    else:
+        try:
+            with open(name, "wb") as f:
+                f.write(data)
+            lines += ["", f"Bot no configurado: guardado en {os.path.abspath(name)}"]
+        except OSError as e:
+            lines += ["", f"No se pudo guardar el archivo: {e}"]
+    msgbox("Exportación", lines)
+
+
 def act(action):
     """Ejecuta una acción; devuelve True si hay que salir."""
     if action == "quit":
@@ -419,6 +455,10 @@ def act(action):
         run_speed()
     elif action == "ip":
         run_ip()
+    elif action == "update":
+        run_update()
+    elif action in ("export30", "export0"):
+        run_export(int(action[6:]))
     elif action == "about":
         about()
     elif action in REPORTS:

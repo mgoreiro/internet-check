@@ -118,11 +118,104 @@ def tg_api(method: str, params: dict = None, timeout: float = 15, quiet: bool = 
         return None
 
 
-def send_telegram(text: str, reply_markup: dict = None) -> bool:
-    params = {"chat_id": CHAT_ID, "text": text}
-    if reply_markup:
-        params["reply_markup"] = reply_markup
-    return tg_api("sendMessage", params) is not None
+# ---- roles y destinatarios ----
+# El administrador principal es TELEGRAM_CHAT_ID (recibe los avisos). TELEGRAM_ADMINS añade más
+# administradores y TELEGRAM_VIEWERS chats de solo consulta (pueden ser grupos). Todos son ids de chat.
+
+def _id_list(name: str):
+    return [x.strip() for x in os.environ.get(name, "").split(",") if x.strip()]
+
+
+ADMINS = ([CHAT_ID] if CHAT_ID else []) + [x for x in _id_list("TELEGRAM_ADMINS") if x != CHAT_ID]
+VIEWERS = [x for x in _id_list("TELEGRAM_VIEWERS") if x not in ADMINS]
+NOTIFY_VIEWERS = os.environ.get("TELEGRAM_NOTIFY_VIEWERS", "0") == "1"  # copiar los avisos importantes
+
+_ctx = threading.local()  # chat y rol de la petición que se está atendiendo (por hilo)
+
+
+def role_of(chat):
+    """'admin', 'viewer' o None para un id de chat."""
+    chat = str(chat)
+    return "admin" if chat in ADMINS else "viewer" if chat in VIEWERS else None
+
+
+def set_context(chat, role):
+    _ctx.chat, _ctx.role = str(chat), role
+
+
+def clear_context():
+    _ctx.chat = _ctx.role = None
+
+
+def current_role() -> str:
+    """Rol de quien pidió la acción en curso; las tareas del servicio actúan como admin."""
+    return getattr(_ctx, "role", None) or "admin"
+
+
+def _targets(to=None, broadcast=False):
+    if to:
+        return [str(to)]
+    chat = getattr(_ctx, "chat", None)
+    if chat:  # se responde siempre al chat que preguntó
+        return [chat]
+    if broadcast and NOTIFY_VIEWERS:
+        return ADMINS + VIEWERS
+    return [CHAT_ID]
+
+
+def send_telegram(text: str, reply_markup: dict = None, to=None, broadcast: bool = False) -> bool:
+    """Envía un mensaje. Sin `to`, responde al chat de la petición en curso o, en las tareas del
+    servicio, al administrador (y a todos si `broadcast` y TELEGRAM_NOTIFY_VIEWERS=1).
+    Devuelve si se entregó al primer destinatario."""
+    first = None
+    for chat in _targets(to, broadcast):
+        params = {"chat_id": chat, "text": text}
+        if reply_markup:
+            params["reply_markup"] = reply_markup
+        ok = tg_api("sendMessage", params) is not None
+        first = ok if first is None else first
+    return bool(first)
+
+
+def tg_upload(method: str, field: str, filename: str, data: bytes, content_type: str,
+              params: dict, timeout: float = 60) -> bool:
+    """Sube un archivo a Telegram con multipart/form-data (solo librería estándar)."""
+    boundary = "----ic" + os.urandom(8).hex()
+    body = bytearray()
+    for key, value in params.items():
+        body += f'--{boundary}\r\nContent-Disposition: form-data; name="{key}"\r\n\r\n{value}\r\n'.encode()
+    body += (f'--{boundary}\r\nContent-Disposition: form-data; name="{field}"; filename="{filename}"\r\n'
+             f'Content-Type: {content_type}\r\n\r\n').encode() + data + b"\r\n"
+    body += f"--{boundary}--\r\n".encode()
+    req = urllib.request.Request(
+        f"https://api.telegram.org/bot{TOKEN}/{method}", data=bytes(body),
+        headers={"Content-Type": f"multipart/form-data; boundary={boundary}"})
+    try:
+        with urllib.request.urlopen(req, timeout=timeout) as r:
+            return bool(json.load(r).get("ok"))
+    except Exception as e:  # noqa: BLE001
+        log.warning("Fallo subiendo a Telegram (%s): %s", method, e)
+        return False
+
+
+def _send_file(method, field, filename, data, content_type, caption, reply_markup, to):
+    first = None
+    for chat in _targets(to):
+        params = {"chat_id": chat, "caption": caption[:1000]}
+        if reply_markup:
+            params["reply_markup"] = json.dumps(reply_markup)
+        ok = tg_upload(method, field, filename, data, content_type, params)
+        first = ok if first is None else first
+    return bool(first)
+
+
+def send_photo(png: bytes, caption: str = "", reply_markup: dict = None, to=None) -> bool:
+    return _send_file("sendPhoto", "photo", "grafica.png", png, "image/png", caption, reply_markup, to)
+
+
+def send_document(data: bytes, filename: str, caption: str = "", reply_markup: dict = None, to=None,
+                  content_type: str = "application/octet-stream") -> bool:
+    return _send_file("sendDocument", "document", filename, data, content_type, caption, reply_markup, to)
 
 
 # ---------- IP pública ----------

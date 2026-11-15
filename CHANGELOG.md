@@ -2,6 +2,18 @@
 
 Formato basado en [Keep a Changelog](https://keepachangelog.com/es-ES/1.1.0/).
 
+## [1.6.0] — 2026-11-15
+### Añadido
+- Gráficas PNG de latencia, pérdida, velocidad y salud (botón 🖼️ y `/graficas`), dibujadas sin
+  dependencias externas.
+- Varios usuarios autorizados: administradores (`TELEGRAM_CHAT_ID`, `TELEGRAM_ADMINS`) y espectadores
+  de solo consulta (`TELEGRAM_VIEWERS`, grupos incluidos), con copia opcional de los avisos
+  (`TELEGRAM_NOTIFY_VIEWERS`). Cada respuesta va al chat que la pidió.
+- Exportación del histórico a CSV en un zip (botón 📤 y `/exportar`; también desde la TUI).
+- Aviso de versión nueva consultando las releases de GitHub (botón 🔎, `/actualizar` y aviso
+  automático diario, `UPDATE_CHECK_HOURS`). No instala nada por su cuenta.
+- TUI: exportar CSV y buscar actualización.
+
 ## [1.5.2] — 2026-11-15
 ### Corregido
 - Autor: se identifica como Miguel González Oreiro en cabeceras, documentación, «Acerca de» y

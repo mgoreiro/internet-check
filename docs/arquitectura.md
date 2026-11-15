@@ -28,6 +28,9 @@ datos SQLite. La TUI es un proceso aparte que lee la misma configuración y la m
 | `metrics.py` | Ráfagas de latencia/pérdida, comprobación de DNS y lectura de salud del sistema | `common`, `db` |
 | `lan.py` | Escaneo ARP, fabricantes (OUI), NetBIOS, Wake-on-LAN | stdlib |
 | `info.py` | Ayuda y «acerca de»; la versión sale de `_version.py` (generado por `build-deb.sh`) o, en desarrollo, del `CHANGELOG.md` | `common` |
+| `charts.py` | Gráficas PNG: lienzo RGB, fuente de bitmap 5×7 y codificador PNG con `zlib` | `common`, `db` |
+| `export.py` | Exportación del histórico a CSV dentro de un zip | `common`, `db` |
+| `updates.py` | Búsqueda de versiones nuevas en las releases de GitHub | `info` |
 | `reports.py` | Textos de estado, caídas, velocidad, dispositivos, calidad, salud e informes | `common`, `db`, `lan`, `metrics` |
 | `jobs.py` | Bucles periódicos y sus avisos | `common`, `db`, `lan`, `metrics`, `reports` |
 | `bot.py` | Menú, acciones, confirmación de reinicio | `common`, `db`, `lan`, `reports` |
@@ -107,6 +110,42 @@ a partir de la base de datos. `jobs.report_tick` lo envía a `REPORT_DAILY_TIME`
 `REPORT_WEEKLY_DAY`) y recuerda en `kv.report_last` el día enviado, de modo que no se repite y se
 recupera si la Pi estaba apagada a esa hora. No se envía antes de una hora de monitorización.
 
+## Usuarios y permisos
+
+`common.py` clasifica cada chat de Telegram con `role_of(chat)`: **administrador**
+(`TELEGRAM_CHAT_ID` y `TELEGRAM_ADMINS`), **espectador** (`TELEGRAM_VIEWERS`) o desconocido, que se
+ignora. Las acciones de administración (`ADMIN_ONLY` en `bot.py`: reinicio, Wake-on-LAN y su
+confirmación) se rechazan para los espectadores y, además, cada una vuelve a comprobar el rol
+(`_require_admin`).
+
+Cada petición se atiende en su hilo con un **contexto** (`set_context(chat, rol)`, por hilo) del que
+`send_telegram`, `send_photo` y `send_document` toman el destinatario: **siempre se responde al chat
+que preguntó**. Las tareas del servicio no tienen contexto y escriben al administrador principal;
+con `broadcast=True` y `TELEGRAM_NOTIFY_VIEWERS=1` copian el aviso a todos. El teclado del menú se
+construye según el rol, de modo que los espectadores no ven los botones de administración.
+
+## Gráficas
+
+`charts.py` dibuja sin dependencias: un `Canvas` RGB (`bytearray`), una fuente de bitmap 5×7
+(mayúsculas sin acentos, dígitos y signos), rectas con el algoritmo de Bresenham y un codificador
+PNG (firma, `IHDR`, `IDAT` comprimido con `zlib` y `IEND`, con su CRC). `draw_chart` calcula marcas
+«redondas» (1, 2, 5 × 10ⁿ), rejilla, leyenda y escala temporal, y **corta la línea** donde faltan
+datos. Las series largas se reducen por tramos (`downsample`). El PNG sale en unos 20 ms.
+
+## Exportación
+
+`export.build_zip` genera `caidas.csv`, `velocidad.csv`, `calidad.csv`, `salud.csv` y un `LEEME.txt`
+dentro de un zip. Los CSV llevan BOM UTF-8 y, junto a la fecha local, la hora en segundos Unix
+(`epoch`) para análisis sin ambigüedad de zona horaria. La subida a Telegram usa
+`multipart/form-data` construido a mano (`common.tg_upload`).
+
+## Versiones nuevas
+
+`updates.check` consulta `releases/latest` de la API de GitHub (petición anónima de lectura) y
+compara versiones como tuplas numéricas (1.10.0 > 1.9.9). `jobs.update_tick` avisa **una sola vez**
+por versión (`kv.update_notified`). Las notas de la release son texto externo: se recortan y se
+envían como texto plano. Nunca se descarga ni se instala nada automáticamente.
+
 ## Escaneo de la red
 
 1. Un intento de conexión TCP al puerto 80 de cada dirección de la red (64 hilos). No importa que
@@ -127,7 +166,7 @@ Base SQLite en `/var/lib/internet-check/data.db`:
 | `devices` | `mac` (clave), `ip`, `hostname`, `first_seen`, `last_seen` |
 | `quality` | `ts`, `rtt_avg`, `rtt_max`, `jitter`, `loss`, `dns_ms`, `dns_ok` |
 | `health` | `ts`, `temp`, `load`, `mem_pct`, `disk_pct`, `db_kb` |
-| `kv` | `installed_at`, `public_ip`, `lan_baseline`, `reboot_requested`, `report_last` |
+| `kv` | `installed_at`, `public_ip`, `lan_baseline`, `reboot_requested`, `report_last`, `update_notified` |
 
 Cada operación abre y cierra su conexión, lo que la hace segura entre hilos y entre procesos
 (servicio y TUI).

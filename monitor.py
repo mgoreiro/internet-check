@@ -46,9 +46,9 @@ def save_state(state: dict) -> None:
         log.warning("No se pudo guardar el estado: %s", e)
 
 
-def notify_until_sent(text: str) -> None:
-    """Reintenta hasta que Telegram acepte el mensaje."""
-    while not c.send_telegram(text):
+def notify_until_sent(text: str, broadcast: bool = True) -> None:
+    """Reintenta hasta que Telegram acepte el mensaje (a todos si TELEGRAM_NOTIFY_VIEWERS=1)."""
+    while not c.send_telegram(text, broadcast=broadcast):
         time.sleep(15)
     log.info("Mensaje enviado: %s", text.replace("\n", " | "))
 

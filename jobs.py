@@ -11,6 +11,7 @@ import db
 import lan
 import metrics
 import reports
+import updates
 
 log = logging.getLogger("internet-check.jobs")
 
@@ -18,6 +19,7 @@ SPEED_EVERY_HOURS = float(os.environ.get("SPEEDTEST_EVERY_HOURS", "6"))   # 0 = 
 SPEED_MIN_DOWN = float(os.environ.get("SPEED_MIN_DOWN_MBPS", "0"))        # 0 = sin alerta
 IP_CHECK_MINUTES = float(os.environ.get("IP_CHECK_MINUTES", "5"))         # 0 = desactivado
 LAN_SCAN_MINUTES = float(os.environ.get("LAN_SCAN_MINUTES", "10"))        # 0 = desactivado
+UPDATE_CHECK_HOURS = float(os.environ.get("UPDATE_CHECK_HOURS", "24"))    # busca versión nueva; 0 = desactivado
 
 QUALITY_INTERVAL = float(os.environ.get("QUALITY_INTERVAL", "60"))        # s entre ráfagas; 0 = desactivado
 QUALITY_LOSS_ALERT = float(os.environ.get("QUALITY_LOSS_ALERT", "10"))    # % de pérdida que se considera mala
@@ -106,18 +108,18 @@ def evaluate_quality(q):
               f"(máx {q['rtt_max'] or 0:.0f}) · jitter {q['jitter']:.0f} ms")
     if not _q["degraded"] and _q["bad"] >= QUALITY_ALERT_BURSTS:
         _q["degraded"] = True
-        c.send_telegram(f"⚠️ Conexión degradada en {c.NAME}\n{detail}")
+        c.send_telegram(f"⚠️ Conexión degradada en {c.NAME}\n{detail}", broadcast=True)
     elif _q["degraded"] and _q["good"] >= QUALITY_ALERT_BURSTS:
         _q["degraded"] = False
-        c.send_telegram(f"✅ Conexión estable de nuevo en {c.NAME}\n{detail}")
+        c.send_telegram(f"✅ Conexión estable de nuevo en {c.NAME}\n{detail}", broadcast=True)
 
     _q["dns_bad"] = 0 if q["dns_ok"] else _q["dns_bad"] + 1
     if not _q["dns_down"] and _q["dns_bad"] >= QUALITY_ALERT_BURSTS:
         _q["dns_down"] = True
-        c.send_telegram(f"⚠️ El DNS no responde en {c.NAME}, pero hay conexión a Internet.")
+        c.send_telegram(f"⚠️ El DNS no responde en {c.NAME}, pero hay conexión a Internet.", broadcast=True)
     elif _q["dns_down"] and q["dns_ok"]:
         _q["dns_down"] = False
-        c.send_telegram(f"✅ El DNS vuelve a responder en {c.NAME} ({q['dns_ms']:.0f} ms).")
+        c.send_telegram(f"✅ El DNS vuelve a responder en {c.NAME} ({q['dns_ms']:.0f} ms).", broadcast=True)
 
 
 def quality_tick():
@@ -189,6 +191,19 @@ def report_tick():
         db.kv_set("report_last", today)  # si falla el envío, se reintenta en el siguiente ciclo
 
 
+# ---- versión nueva ----
+
+def update_tick():
+    """Avisa una sola vez de cada versión nueva; nunca instala nada."""
+    rel, newer, error = updates.check()
+    if error:
+        log.info("No se pudo comprobar si hay versión nueva: %s", error)
+        return
+    if newer and db.kv_get("update_notified") != rel["version"]:
+        if c.send_telegram(updates.message(rel)):
+            db.kv_set("update_notified", rel["version"])
+
+
 def start_all():
     import threading
     # (nombre, valor de activación, segundos entre ejecuciones, función, espera inicial)
@@ -200,6 +215,7 @@ def start_all():
         ("quality", QUALITY_INTERVAL, QUALITY_INTERVAL, quality_tick, 30),
         ("health", HEALTH_MINUTES, HEALTH_MINUTES * 60, health_tick, 15),
         ("report", 1 if _report_time() else 0, 60, report_tick, 90),
+        ("update", UPDATE_CHECK_HOURS, UPDATE_CHECK_HOURS * 3600, update_tick, 180),
     ]
     for name, enabled, interval, fn, delay in jobs:
         if enabled <= 0:

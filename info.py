@@ -76,13 +76,17 @@ def bot_help() -> str:
         "📡 /dispositivos — equipos de la red (fabricante, nombres)\n"
         "📶 /calidad — latencia, pérdida y DNS\n"
         "🩺 /salud — temperatura, memoria y disco\n"
+        "🖼️ /graficas — gráficas de latencia, pérdida, velocidad y salud\n"
         "📰 /informe — resumen de 24 h, semana o mes\n"
-        "💡 /encender — Wake-on-LAN\n"
-        "🔄 /reiniciar — reinicia la Pi (pide confirmación)\n"
+        "📤 /exportar — histórico en CSV (zip)\n"
+        "🔎 /actualizar — busca una versión nueva\n"
+        "💡 /encender — Wake-on-LAN (solo administrador)\n"
+        "🔄 /reiniciar — reinicia la Pi, con confirmación (solo administrador)\n"
         "ℹ️ /acerca — versión, autor y licencia\n\n"
         "Avisos automáticos: caídas y recuperación, conexión degradada, fallo de DNS, cambio de IP, "
-        "dispositivos nuevos, temperatura/disco/memoria y el informe programado.\n\n"
-        "Solo respondo al chat configurado. Los ajustes están en /etc/internet-check/config.env."
+        "dispositivos nuevos, temperatura/disco/memoria, versión nueva y el informe programado.\n\n"
+        "Solo respondo a los chats autorizados: los administradores pueden todo y los espectadores "
+        "solo consultan. Ajustes en /etc/internet-check/config.env."
     )
 
 
@@ -164,7 +168,11 @@ Salud de la Pi
   Temperatura de CPU, carga, memoria, disco y tamaño de la base de datos.
 
 Informes (menú Informes)
-  Resumen diario, semanal o mensual: disponibilidad, caídas, velocidad, calidad y equipo.
+  Resumen diario, semanal o mensual: disponibilidad, caídas, velocidad, calidad y equipo. También \
+exporta el histórico a CSV (zip): se envía al bot o, sin bot, se guarda en la carpeta actual.
+
+Buscar actualización (menú Ayuda)
+  Consulta la última versión publicada en GitHub. Nunca instala nada por su cuenta.
 
 BOT DE TELEGRAM
 Todas estas funciones están también en el bot: escribe /menu. Además permite encender equipos \

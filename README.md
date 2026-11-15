@@ -7,6 +7,8 @@ controlado por un **bot de Telegram** y por una **TUI** al estilo Turbo Vision.
 - Distingue entre caída de Internet, apagón y reinicio solicitado, y calcula la disponibilidad.
 - Bot bidireccional con menú de botones: estado, test de velocidad, IP pública, historiales,
   dispositivos de la red, Wake-on-LAN y reinicio remoto.
+- Gráficas PNG, exportación a CSV, aviso de versión nueva y varios usuarios con permisos
+  (administradores y solo consulta).
 - Calidad de la conexión (latencia, jitter, pérdida y DNS), salud de la Pi (temperatura, memoria,
   disco) e **informes** automáticos diarios y semanales.
 - Avisos automáticos: test de velocidad programado, cambio de IP pública, dispositivos nuevos,
@@ -44,14 +46,14 @@ controlado por un **bot de Telegram** y por una **TUI** al estilo Turbo Vision.
 El paquete se genera en cualquier máquina, también macOS (no necesita `dpkg-deb`):
 
 ```bash
-./build-deb.sh 1.5.2
-scp internet-check_1.5.2_all.deb usuario@orangepi:
+./build-deb.sh 1.6.0
+scp internet-check_1.6.0_all.deb usuario@orangepi:
 ```
 
 En la Orange Pi:
 
 ```bash
-sudo apt install ./internet-check_1.5.2_all.deb
+sudo apt install ./internet-check_1.6.0_all.deb
 sudo nano /etc/internet-check/bot.env      # token y chat id
 sudo systemctl restart internet-check
 journalctl -u internet-check -f
@@ -110,6 +112,8 @@ ajustes comentados están en `/usr/share/internet-check/`.
 | `RETENTION_DAYS` | `30` | Días que se conservan las medidas de calidad y salud |
 | `REPORT_DAILY_TIME` | `08:00` | Hora del informe diario, **hora local de la Pi**; `off` lo desactiva |
 | `REPORT_WEEKLY_DAY` | `mon` | Día en que el informe diario pasa a ser semanal (`mon`…`sun`); `off` = nunca |
+| `UPDATE_CHECK_HOURS` | `24` | Cada cuántas horas busca una versión nueva en GitHub; `0` lo desactiva |
+| `UPDATE_REPO` | el del proyecto | Repositorio de GitHub donde buscar las releases (`propietario/repositorio`) |
 
 > **Zona horaria:** las horas de los mensajes y del informe programado son las del sistema. Muchas
 > imágenes de Orange Pi vienen en UTC; ajústala con `sudo timedatectl set-timezone Europe/Madrid`.
@@ -132,15 +136,39 @@ Escribe `/menu` (o cualquier texto) y aparece el menú con botones. También hay
 | 📈 Velocidad (histórico) | `/historico` | Mini-gráfica de tendencia, medias y últimos tests |
 | 📶 Calidad | `/calidad` | Latencia, jitter, pérdida y DNS: última hora, 24 h y gráfica por hora |
 | 🩺 Salud | `/salud` | Temperatura de CPU, carga, memoria, disco y tamaño de la base de datos |
+| 🖼️ Gráficas | `/graficas` | Imagen PNG de latencia (24 h), pérdida (24 h), velocidad (7 días) o temperatura y memoria (24 h) |
 | 📰 Informe | `/informe` | Resumen de las últimas 24 h, la semana o el mes |
+| 📤 Exportar | `/exportar` | Zip con CSV de caídas, velocidad, calidad y salud (7 días, 30 días o todo) |
+| 🔎 Actualización | `/actualizar` | Busca una versión nueva en GitHub y explica cómo instalarla |
 | ❓ Ayuda | `/ayuda` | Lista de comandos y de avisos automáticos |
 | ℹ️ Acerca de | `/acerca` | Versión, autor, licencia y repositorio |
 | 📡 Dispositivos | `/dispositivos` | Escanea la red: IP, fabricante, MAC, nombre NetBIOS y DNS; marca los nuevos con 🆕 |
 | 💡 Encender equipo | `/encender` | Envía un paquete Wake-on-LAN al equipo elegido |
 | 🔄 Reiniciar | `/reiniciar` | Reinicia la Orange Pi tras una confirmación que caduca a los 60 s |
 
-**Solo responde al chat de `TELEGRAM_CHAT_ID`**; cualquier otro chat se ignora y queda anotado
-en el log.
+### Usuarios autorizados
+El bot solo responde a los chats que aparecen en `bot.env`; cualquier otro se ignora y queda
+anotado en el log. Cada respuesta va al chat que la pidió.
+
+| Variable | Rol | Permisos |
+|---|---|---|
+| `TELEGRAM_CHAT_ID` | Administrador principal | Todo, y recibe todos los avisos |
+| `TELEGRAM_ADMINS` | Administradores adicionales | Todo |
+| `TELEGRAM_VIEWERS` | Espectadores | Solo consulta: sin **Encender equipo** ni **Reiniciar** |
+
+Son listas de ids de chat separados por comas. Un **grupo** también vale (su id es negativo): todos
+sus miembros tienen el rol del grupo. Con `TELEGRAM_NOTIFY_VIEWERS=1`, los avisos importantes
+(caída y recuperación, reinicio, conexión degradada, fallo de DNS) se copian también a los
+espectadores. Para conocer el id de un chat, escribe al bot y consulta
+`https://api.telegram.org/bot<TOKEN>/getUpdates`.
+
+### Gráficas, exportación y versión nueva
+- **Gráficas:** imágenes PNG dibujadas por el propio programa, sin librerías externas.
+- **Exportar:** un `.zip` con `caidas.csv`, `velocidad.csv`, `calidad.csv` y `salud.csv` (UTF-8
+  con BOM, para que Excel respete los acentos) y un `LEEME.txt`. La calidad y la salud solo existen
+  durante `RETENTION_DAYS`.
+- **Actualización:** consulta la última release de GitHub y avisa una sola vez de cada versión
+  nueva (`UPDATE_CHECK_HOURS`). **Nunca instala nada por su cuenta**: te da el comando para hacerlo.
 
 ### Dispositivos: fabricante y nombres
 - **Fabricante:** búsqueda por MAC en la base del IEEE (MA-L, MA-M y MA-S, unas 54.000 entradas).
@@ -205,8 +233,9 @@ desplegables, ventanas con borde doble y sombra, diálogos con botón y barra de
 | `F3` / `F4` | Test de velocidad / IP pública (se envían además al bot) |
 | `Enter` | Abre la opción de la lista · `q` o `Esc` sale |
 
-El menú **Informes** abre el resumen diario, semanal o mensual. El lanzador se relanza con `sudo`
-para poder leer `bot.env`.
+El menú **Informes** abre el resumen diario, semanal o mensual y exporta el histórico a CSV (se envía
+al bot, o se guarda en la carpeta actual si no hay bot). **Ayuda → Buscar actualización** consulta
+GitHub. El lanzador se relanza con `sudo` para poder leer `bot.env`.
 
 ---
 
@@ -237,6 +266,8 @@ Detalles de módulos, hilos y esquema de datos en [docs/arquitectura.md](docs/ar
   - Telegram (`api.telegram.org`): mensajes del bot.
   - `api.ipify.org`, `ifconfig.me`, `icanhazip.com`: para conocer la IP pública.
   - Servidores LibreSpeed de Clouvider: solo durante el test de velocidad.
+  - `api.github.com`: para buscar versiones nuevas; solo se envía una petición anónima de lectura
+    (sin datos tuyos ni de la instalación). Se desactiva con `UPDATE_CHECK_HOURS=0`.
 - El escaneo de la red es local (ARP, NetBIOS y DNS inverso) y sus resultados no salen de la Pi,
   salvo lo que tú pidas al bot.
 
@@ -255,7 +286,7 @@ python3 monitor.py
 python3 tui.py
 
 # Paquete .deb
-./build-deb.sh 1.5.2
+./build-deb.sh 1.6.0
 
 # Regenerar la base de fabricantes con los CSV del IEEE
 python3 -I tools/build_oui.py <carpeta con oui.csv, mam.csv y oui36.csv>
@@ -270,6 +301,9 @@ python3 -I tools/build_oui.py <carpeta con oui.csv, mam.csv y oui36.csv>
 | `common.py` | Configuración, Telegram, IP pública y test de velocidad |
 | `metrics.py` | Calidad de la conexión (latencia, jitter, pérdida, DNS) y salud de la Pi |
 | `info.py` | Textos de ayuda y «acerca de» (versión, autor, licencia) de la TUI y del bot |
+| `charts.py` | Gráficas PNG sin dependencias (lienzo, fuente de bitmap y codificador PNG) |
+| `export.py` | Exportación del histórico a CSV dentro de un zip |
+| `updates.py` | Búsqueda de versiones nuevas en las releases de GitHub |
 | `lan.py` | Escaneo de red, fabricantes, NetBIOS y Wake-on-LAN |
 | `db.py` | Almacenamiento SQLite |
 | `tui.py` | Interfaz Turbo Vision |
