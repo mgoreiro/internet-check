@@ -2,6 +2,20 @@
 
 Formato basado en [Keep a Changelog](https://keepachangelog.com/es-ES/1.1.0/).
 
+## [1.7.0] — 2026-11-15
+### Añadido
+- Vigilancia de equipos y servicios propios (`WATCH_TARGETS`: TCP, ping y HTTP), con aviso de caída y
+  recuperación, disponibilidad en `/vigilancia` y en los informes.
+- Nombres de dispositivos (`/nombrar`) y presencia (`/presencia`): aviso cuando un dispositivo
+  vigilado llega o se va.
+- Modo no molestar (`QUIET_HOURS` y `/silencio`): retiene los avisos poco urgentes y los entrega en un
+  resumen. Las caídas de Internet, los reinicios y las caídas de servicios llegan siempre.
+- Latido (`HEARTBEAT_URL`): alarma de caída de la conexión a través de un servicio externo que avisa a
+  Telegram cuando dejan de llegar los latidos.
+- TUI: presencia y servicios vigilados en el menú Red.
+### Cambiado
+- La base de datos migra sola las columnas nuevas de `devices`.
+
 ## [1.6.0] — 2026-11-15
 ### Añadido
 - Gráficas PNG de latencia, pérdida, velocidad y salud (botón 🖼️ y `/graficas`), dibujadas sin

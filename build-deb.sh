@@ -4,14 +4,14 @@
 # Genera internet-check_<version>_all.deb (funciona en macOS y Linux, sin dpkg-deb)
 set -e
 cd "$(dirname "$0")"
-VERSION="${1:-1.6.0}"
+VERSION="${1:-1.7.0}"
 OUT="internet-check_${VERSION}_all.deb"
 B="$(mktemp -d)"; trap 'rm -rf "$B"' EXIT
 export COPYFILE_DISABLE=1
 
 R="$B/root"
 install -d -m 755 "$R/usr/bin" "$R/usr/lib/internet-check" "$R/lib/systemd/system" "$R/usr/share/internet-check" "$R/usr/share/doc/internet-check"
-for f in common.py db.py lan.py metrics.py info.py charts.py export.py updates.py reports.py jobs.py bot.py monitor.py tui.py; do
+for f in common.py db.py lan.py metrics.py info.py charts.py export.py updates.py watch.py quiet.py heartbeat.py reports.py jobs.py bot.py monitor.py tui.py; do
     install -m 755 "$f" "$R/usr/lib/internet-check/$f"
 done
 # Versión instalada (la lee info.py para «Acerca de»)

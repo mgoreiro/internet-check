@@ -26,7 +26,20 @@ CREATE INDEX IF NOT EXISTS idx_quality_ts ON quality(ts);
 CREATE TABLE IF NOT EXISTS health(
     ts REAL NOT NULL, temp REAL, load REAL, mem_pct REAL, disk_pct REAL, db_kb REAL);
 CREATE INDEX IF NOT EXISTS idx_health_ts ON health(ts);
+CREATE TABLE IF NOT EXISTS service_outages(
+    id INTEGER PRIMARY KEY, name TEXT NOT NULL, start REAL NOT NULL, end REAL);
+CREATE INDEX IF NOT EXISTS idx_svc_name ON service_outages(name, start);
+CREATE TABLE IF NOT EXISTS held(
+    id INTEGER PRIMARY KEY, ts REAL NOT NULL, text TEXT NOT NULL, broadcast INTEGER NOT NULL DEFAULT 0);
 """
+
+# Columnas añadidas a `devices` después de la primera versión: se migran al abrir la base
+DEVICE_COLUMNS = (
+    ("alias", "TEXT"),                          # nombre puesto por el usuario
+    ("watch", "INTEGER NOT NULL DEFAULT 0"),    # 1 = avisar cuando llega o se va
+    ("present", "INTEGER"),                     # último estado conocido (1 en la red, 0 ausente)
+    ("misses", "INTEGER NOT NULL DEFAULT 0"),   # escaneos seguidos sin verlo
+)
 
 
 def _connect():
@@ -34,6 +47,11 @@ def _connect():
     con = sqlite3.connect(DB_FILE, timeout=10)
     con.row_factory = sqlite3.Row
     con.executescript(SCHEMA)
+    have = {r["name"] for r in con.execute("PRAGMA table_info(devices)")}
+    for column, ddl in DEVICE_COLUMNS:
+        if column not in have:
+            con.execute(f"ALTER TABLE devices ADD COLUMN {column} {ddl}")
+    con.commit()
     return con
 
 
@@ -170,3 +188,102 @@ def speedtests_between(t0, t1):
 
 def devices_first_seen_between(t0, t1):
     return _query("SELECT * FROM devices WHERE first_seen >= ? AND first_seen <= ? ORDER BY first_seen", (t0, t1))
+
+
+# ---- nombres y presencia de dispositivos ----
+
+def devices_all():
+    return _query("SELECT * FROM devices ORDER BY COALESCE(alias, hostname, mac)")
+
+
+def aliases():
+    """{mac: nombre} de los dispositivos a los que el usuario ha puesto nombre."""
+    return {r["mac"]: r["alias"] for r in _query("SELECT mac, alias FROM devices WHERE alias IS NOT NULL")}
+
+
+def device_find(query):
+    """Dispositivos que coinciden con una MAC, IP o nombre (exactos primero, luego parciales)."""
+    q = (query or "").strip().lower().replace("-", ":")
+    if not q:
+        return []
+    rows = devices_all()
+    exact = [r for r in rows if q in (r["mac"].lower(), (r["ip"] or "").lower(), (r["alias"] or "").lower())]
+    if exact:
+        return exact
+    return [r for r in rows if any(q in (r[k] or "").lower() for k in ("alias", "hostname", "mac", "ip"))]
+
+
+def set_alias(mac, alias):
+    _exec("UPDATE devices SET alias=? WHERE mac=?", (alias or None, mac))
+
+
+def toggle_watch(mac) -> bool:
+    """Activa o desactiva el aviso de llegada/salida y devuelve el nuevo estado."""
+    _exec("UPDATE devices SET watch = 1 - watch WHERE mac=?", (mac,))
+    return bool(_query("SELECT watch FROM devices WHERE mac=?", (mac,))[0]["watch"])
+
+
+def presence_update(seen, misses_limit, now=None):
+    """Actualiza quién está en la red. `seen` = MAC vistas en este escaneo.
+
+    Un dispositivo se da por ausente tras `misses_limit` escaneos seguidos sin verlo. Devuelve los
+    cambios de estado de los dispositivos vigilados: [(fila, 'arrived' | 'left')]."""
+    events = []
+    with closing(_connect()) as con, con:
+        for r in con.execute("SELECT * FROM devices").fetchall():
+            if r["mac"] in seen:
+                if r["present"] == 0 and r["watch"]:
+                    events.append((dict(r), "arrived"))
+                con.execute("UPDATE devices SET present=1, misses=0 WHERE mac=?", (r["mac"],))
+                continue
+            misses = r["misses"] + 1
+            if r["present"] != 0 and misses >= misses_limit:
+                if r["watch"]:
+                    events.append((dict(r), "left"))
+                con.execute("UPDATE devices SET present=0, misses=? WHERE mac=?", (misses, r["mac"]))
+            else:
+                con.execute("UPDATE devices SET misses=? WHERE mac=?", (misses, r["mac"]))
+    return events
+
+
+# ---- servicios vigilados ----
+
+def svc_open(name, start):
+    """Abre una caída del servicio; idempotente si ya hay una abierta."""
+    if _query("SELECT 1 FROM service_outages WHERE name=? AND end IS NULL", (name,)):
+        return
+    _exec("INSERT INTO service_outages(name,start,end) VALUES(?,?,NULL)", (name, start))
+
+
+def svc_close(name, end) -> float:
+    """Cierra la caída abierta y devuelve su inicio (None si no había)."""
+    rows = _query("SELECT start FROM service_outages WHERE name=? AND end IS NULL", (name,))
+    _exec("UPDATE service_outages SET end=? WHERE name=? AND end IS NULL", (end, name))
+    return rows[0]["start"] if rows else None
+
+
+def svc_open_names():
+    return {r["name"] for r in _query("SELECT name FROM service_outages WHERE end IS NULL")}
+
+
+def svc_outages(name, t0, t1):
+    return _query("SELECT * FROM service_outages WHERE name=? AND COALESCE(end,?) > ? AND start < ? ORDER BY start",
+                  (name, t1, t0, t1))
+
+
+def svc_downtime(name, t0, t1) -> float:
+    return sum(max(0.0, min(r["end"] or t1, t1) - max(r["start"], t0)) for r in svc_outages(name, t0, t1))
+
+
+# ---- avisos retenidos por el modo no molestar ----
+
+def held_add(text, broadcast=False, ts=None):
+    _exec("INSERT INTO held(ts,text,broadcast) VALUES(?,?,?)", (ts or time.time(), text, int(broadcast)))
+
+
+def held_all():
+    return _query("SELECT * FROM held ORDER BY ts")
+
+
+def held_clear():
+    _exec("DELETE FROM held")

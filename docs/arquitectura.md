@@ -31,6 +31,9 @@ datos SQLite. La TUI es un proceso aparte que lee la misma configuración y la m
 | `charts.py` | Gráficas PNG: lienzo RGB, fuente de bitmap 5×7 y codificador PNG con `zlib` | `common`, `db` |
 | `export.py` | Exportación del histórico a CSV dentro de un zip | `common`, `db` |
 | `updates.py` | Búsqueda de versiones nuevas en las releases de GitHub | `info` |
+| `watch.py` | Vigilancia de equipos y servicios propios (TCP, ping, HTTP) | `common`, `db` |
+| `quiet.py` | Modo no molestar: retiene los avisos poco urgentes y los entrega en un resumen | `common`, `db` |
+| `heartbeat.py` | Latido periódico a un servicio externo (alarma de caída) | `common` |
 | `reports.py` | Textos de estado, caídas, velocidad, dispositivos, calidad, salud e informes | `common`, `db`, `lan`, `metrics` |
 | `jobs.py` | Bucles periódicos y sus avisos | `common`, `db`, `lan`, `metrics`, `reports` |
 | `bot.py` | Menú, acciones, confirmación de reinicio | `common`, `db`, `lan`, `reports` |
@@ -146,6 +149,41 @@ compara versiones como tuplas numéricas (1.10.0 > 1.9.9). `jobs.update_tick` av
 por versión (`kv.update_notified`). Las notas de la release son texto externo: se recortan y se
 envían como texto plano. Nunca se descarga ni se instala nada automáticamente.
 
+## Vigilancia de servicios
+
+`watch.parse_targets` convierte `WATCH_TARGETS` en destinos TCP, `ping://` o HTTP. `watch.run_once`
+los comprueba en paralelo (hasta 8 hilos) y `watch.evaluate` cuenta los fallos seguidos de cada uno:
+al llegar a `WATCH_FAILS` abre una fila en `service_outages` y avisa; al volver a responder la cierra
+y avisa con la duración. Sobrevive a un reinicio porque el estado «caído» sale de la base de datos,
+y no duplica avisos. Los destinos que no son de la red local (`is_local`) se omiten mientras el
+monitor no ve Internet, para no atribuir al servicio un corte propio. Estos avisos se envían con
+`c.send_telegram` directamente, sin pasar por el modo no molestar.
+
+## Nombres y presencia
+
+La tabla `devices` guarda `alias` (nombre del usuario), `watch` (1 = avisar de llegadas y salidas),
+`present` y `misses`; las columnas se **migran al abrir la base**, así que una base anterior sigue
+funcionando. Tras cada escaneo, `db.presence_update` pone `misses` a cero en los dispositivos vistos y
+suma uno en los demás; solo al llegar a `PRESENCE_MISSES` un dispositivo pasa a ausente, y solo los
+vigilados generan aviso, una vez por cambio de estado.
+
+## Modo no molestar
+
+`quiet.is_quiet` combina el horario fijo (`QUIET_HOURS`, con ventanas que cruzan la medianoche) y el
+modo manual (`kv.dnd_until`). `quiet.notify` es el punto de salida de los avisos **poco urgentes**: en
+modo no molestar los guarda en la tabla `held` y `quiet.flush`, que corre cada minuto, los entrega
+juntos cuando termina. Quedan fuera, y se envían siempre, las caídas de Internet, los reinicios y las
+caídas de servicios vigilados. El informe programado y el aviso de versión nueva no se retienen:
+esperan a que termine.
+
+## Latido
+
+`heartbeat.tick` hace una petición GET a `HEARTBEAT_URL` cada `HEARTBEAT_SECONDS`. Es el único modo de
+tener una alarma **durante** la caída, porque con Internet cortado la Pi no puede escribir a Telegram:
+el servicio externo es quien cuenta el tiempo sin latidos y avisa. La URL lleva un código secreto, así
+que los logs solo mencionan el nombre del servidor y el tipo de error, y solo en el primer fallo de
+cada racha.
+
 ## Escaneo de la red
 
 1. Un intento de conexión TCP al puerto 80 de cada dirección de la red (64 hilos). No importa que
@@ -163,7 +201,9 @@ Base SQLite en `/var/lib/internet-check/data.db`:
 |---|---|
 | `outages` | `start`, `end` (NULL = en curso), `kind` (`internet` · `power` · `reboot`) |
 | `speedtests` | `ts`, `down`, `up`, `ping`, `source` (`auto` · `bot` · `tui`) |
-| `devices` | `mac` (clave), `ip`, `hostname`, `first_seen`, `last_seen` |
+| `devices` | `mac` (clave), `ip`, `hostname`, `first_seen`, `last_seen`, `alias`, `watch`, `present`, `misses` |
+| `service_outages` | `name`, `start`, `end` (NULL = caído ahora) |
+| `held` | `ts`, `text`, `broadcast`: avisos retenidos por el modo no molestar |
 | `quality` | `ts`, `rtt_avg`, `rtt_max`, `jitter`, `loss`, `dns_ms`, `dns_ok` |
 | `health` | `ts`, `temp`, `load`, `mem_pct`, `disk_pct`, `db_kb` |
 | `kv` | `installed_at`, `public_ip`, `lan_baseline`, `reboot_requested`, `report_last`, `update_notified` |

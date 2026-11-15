@@ -18,6 +18,7 @@ import db
 import export
 import info
 import lan
+import quiet
 import reports
 import updates
 
@@ -37,6 +38,9 @@ MENU = {
          {"text": "📰 Informe", "callback_data": "report"}],
         [{"text": "📤 Exportar", "callback_data": "export"},
          {"text": "🔎 Actualización", "callback_data": "update"}],
+        [{"text": "👁️ Vigilancia", "callback_data": "watch"},
+         {"text": "🏠 Presencia", "callback_data": "presence"}],
+        [{"text": "🌙 No molestar", "callback_data": "quiet"}],
         [{"text": "💡 Encender equipo", "callback_data": "wol"},
          {"text": "🔄 Reiniciar", "callback_data": "reboot"}],
         [{"text": "❓ Ayuda", "callback_data": "help"},
@@ -44,7 +48,8 @@ MENU = {
     ]
 }
 # Acciones que solo puede pedir un administrador
-ADMIN_ONLY = {"wol", "reboot", "reboot_yes", "cancel", "/encender", "/reiniciar"}
+ADMIN_ONLY = {"wol", "reboot", "reboot_yes", "cancel", "/encender", "/reiniciar",
+              "presence", "/presencia", "quiet", "/silencio", "/nombrar"}
 COMMANDS = [
     {"command": "menu", "description": "Mostrar el menú"},
     {"command": "estado", "description": "Estado de la conexión"},
@@ -59,6 +64,10 @@ COMMANDS = [
     {"command": "informe", "description": "Informe de 24 h, semana o mes"},
     {"command": "exportar", "description": "Exportar el histórico a CSV"},
     {"command": "actualizar", "description": "Buscar una versión nueva"},
+    {"command": "vigilancia", "description": "Estado de los servicios vigilados"},
+    {"command": "presencia", "description": "Quién está en casa"},
+    {"command": "nombrar", "description": "Poner nombre a un dispositivo"},
+    {"command": "silencio", "description": "Modo no molestar"},
     {"command": "encender", "description": "Encender un equipo (Wake-on-LAN)"},
     {"command": "reiniciar", "description": "Reiniciar la Orange Pi"},
     {"command": "ayuda", "description": "Ayuda y lista de comandos"},
@@ -196,6 +205,98 @@ def do_update():
     c.send_telegram(updates.message(rel, newer), menu())
 
 
+# ---------------------------------------------------------------- vigilancia, nombres y no molestar
+
+def _clean_name(text: str) -> str:
+    text = "".join(ch for ch in " ".join(text.split()) if ch.isprintable())
+    return text[:40]
+
+
+def _pick_device(query):
+    """Un único dispositivo para la consulta, o None tras explicar el problema al usuario."""
+    matches = db.device_find(query)
+    if not matches:
+        c.send_telegram(f"❌ No conozco ningún dispositivo «{query}». Mira /dispositivos para ver sus IP y MAC.", menu())
+    elif len(matches) > 1:
+        rows = "\n".join(f"• {d['ip']} · {d['mac']}" + (f" · {d['alias']}" if d["alias"] else "") for d in matches[:10])
+        c.send_telegram(f"Hay varios dispositivos que coinciden con «{query}»; usa la IP o la MAC:\n{rows}", menu())
+    else:
+        return matches[0]
+    return None
+
+
+def do_watch():
+    c.send_telegram(reports.watch_text(), menu())
+
+
+def do_name(args=""):
+    if not _require_admin():
+        return
+    parts = args.split(None, 1)
+    if not parts:
+        c.send_telegram("🏷️ Uso:  /nombrar <IP o MAC> <nombre>\nEjemplo:  /nombrar 192.168.1.20 Móvil de Ana\n"
+                        "Sin nombre, borra el que tenga.", menu())
+        return
+    device = _pick_device(parts[0])
+    if device is None:
+        return
+    alias = _clean_name(parts[1]) if len(parts) > 1 else ""
+    db.set_alias(device["mac"], alias or None)
+    if alias:
+        c.send_telegram(f"✅ {device['ip']} ({device['mac']}) ahora se llama «{alias}».", menu())
+    else:
+        c.send_telegram(f"🗑️ Nombre borrado de {device['ip']} ({device['mac']}).", menu())
+
+
+def do_presence(args=""):
+    if not _require_admin():
+        return
+    query = args.strip()
+    if not query:
+        c.send_telegram(reports.presence_text(), menu())
+        return
+    device = _pick_device(query)
+    if device is None:
+        return
+    who = device["alias"] or device["hostname"] or device["mac"]
+    if db.toggle_watch(device["mac"]):
+        extra = "" if device["alias"] else "\nPonle nombre con /nombrar para reconocerlo mejor."
+        c.send_telegram(f"🏠 Vigilo la presencia de {who}: te aviso cuando llegue o se vaya.{extra}", menu())
+    else:
+        c.send_telegram(f"Dejo de vigilar la presencia de {who}.", menu())
+
+
+def do_quiet_menu():
+    if not _require_admin():
+        return
+    c.send_telegram(quiet.status_text() + "\n\n¿Qué quieres hacer?", {"inline_keyboard": [[
+        {"text": "🌙 2 horas", "callback_data": "dnd:2"},
+        {"text": "🌙 8 horas", "callback_data": "dnd:8"},
+        {"text": "🔔 Desactivar", "callback_data": "dnd:0"}]]})
+
+
+def do_quiet_set(hours):
+    if not _require_admin():
+        return
+    quiet.set_manual(hours)
+    c.send_telegram(quiet.status_text(), menu())
+
+
+def do_quiet_cmd(args=""):
+    """/silencio [horas | off]"""
+    if not _require_admin():
+        return
+    text = args.strip().lower().rstrip("h").strip()
+    if not text:
+        do_quiet_menu()
+    elif text in ("off", "0", "no"):
+        do_quiet_set(0)
+    elif text.replace(".", "", 1).isdigit() and 0 < float(text) <= 72:
+        do_quiet_set(float(text))
+    else:
+        c.send_telegram("🌙 Uso:  /silencio <horas>   (por ejemplo /silencio 8)\n/silencio off para desactivarlo.", menu())
+
+
 # ---------------------------------------------------------------- administración
 
 def do_wol_menu():
@@ -287,6 +388,9 @@ ACTIONS = {
     "chart": do_chart_menu, "/graficas": do_chart_menu,
     "export": do_export_menu, "/exportar": do_export_menu,
     "update": do_update, "/actualizar": do_update,
+    "watch": do_watch, "/vigilancia": do_watch,
+    "presence": do_presence,
+    "quiet": do_quiet_menu,
     "wol": do_wol_menu, "/encender": do_wol_menu,
     "reboot": do_reboot_ask, "/reiniciar": do_reboot_ask,
     "reboot_yes": do_reboot_confirm, "cancel": do_cancel,
@@ -294,12 +398,20 @@ ACTIONS = {
 }
 
 
-def resolve(key):
+# Comandos que reciben texto detrás: /nombrar <IP> <nombre>, /presencia <nombre>, /silencio <horas>
+ARG_COMMANDS = {"/nombrar": do_name, "/presencia": do_presence, "/silencio": do_quiet_cmd}
+
+
+def resolve(key, args=""):
     """Convierte la clave de un botón o comando en una función sin argumentos, o None."""
     if not key:
         return None
+    if key in ARG_COMMANDS:
+        return lambda: ARG_COMMANDS[key](args)
     name, _, arg = key.partition(":")
     if arg:
+        if name == "dnd" and arg in ("0", "2", "8"):
+            return lambda: do_quiet_set(int(arg))
         if name == "wol" and arg.isdigit():
             return lambda: do_wol_send(int(arg))
         if name == "report" and arg in ("24", "168", "720"):
@@ -313,7 +425,7 @@ def resolve(key):
 
 
 def is_admin_only(key) -> bool:
-    return bool(key) and (key in ADMIN_ONLY or key.startswith("wol:"))
+    return bool(key) and (key in ADMIN_ONLY or key.startswith(("wol:", "dnd:")))
 
 
 def _spawn(fn, chat, role):
@@ -336,11 +448,13 @@ def handle(update: dict) -> None:
     if cb:
         chat = (cb.get("message") or {}).get("chat", {}).get("id")
         key = cb.get("data")
+        args = ""
         c.tg_api("answerCallbackQuery", {"callback_query_id": cb["id"]}, quiet=True)
     elif msg:
         chat = msg.get("chat", {}).get("id")
         words = (msg.get("text") or "").split()
         key = words[0].split("@")[0].lower() if words else None
+        args = " ".join(words[1:])
     else:
         return
     role = c.role_of(chat)
@@ -351,7 +465,7 @@ def handle(update: dict) -> None:
     if role != "admin" and is_admin_only(key):
         _spawn(lambda: c.send_telegram("🔒 Solo el administrador puede hacer esto.", menu()), chat, role)
         return
-    action = resolve(key)
+    action = resolve(key, args)
     if action is None:
         if msg:  # texto cualquiera: mostrar el menú
             _spawn(do_menu, chat, role)

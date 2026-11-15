@@ -24,11 +24,12 @@ controlado por un **bot de Telegram** y por una **TUI** al estilo Turbo Vision.
 2. [Configuración](#configuración)
 3. [Bot de Telegram](#bot-de-telegram)
 4. [Avisos automáticos](#avisos-automáticos)
-5. [TUI](#tui)
-6. [Cómo funciona](#cómo-funciona)
-7. [Privacidad y seguridad](#privacidad-y-seguridad)
-8. [Desarrollo](#desarrollo)
-9. [Licencia y créditos](#licencia-y-créditos)
+5. [Alarma cuando se cae la conexión (latido)](#alarma-cuando-se-cae-la-conexión-latido)
+6. [TUI](#tui)
+7. [Cómo funciona](#cómo-funciona)
+8. [Privacidad y seguridad](#privacidad-y-seguridad)
+9. [Desarrollo](#desarrollo)
+10. [Licencia y créditos](#licencia-y-créditos)
 
 ---
 
@@ -46,14 +47,14 @@ controlado por un **bot de Telegram** y por una **TUI** al estilo Turbo Vision.
 El paquete se genera en cualquier máquina, también macOS (no necesita `dpkg-deb`):
 
 ```bash
-./build-deb.sh 1.6.0
-scp internet-check_1.6.0_all.deb usuario@orangepi:
+./build-deb.sh 1.7.0
+scp internet-check_1.7.0_all.deb usuario@orangepi:
 ```
 
 En la Orange Pi:
 
 ```bash
-sudo apt install ./internet-check_1.6.0_all.deb
+sudo apt install ./internet-check_1.7.0_all.deb
 sudo nano /etc/internet-check/bot.env      # token y chat id
 sudo systemctl restart internet-check
 journalctl -u internet-check -f
@@ -114,6 +115,13 @@ ajustes comentados están en `/usr/share/internet-check/`.
 | `REPORT_WEEKLY_DAY` | `mon` | Día en que el informe diario pasa a ser semanal (`mon`…`sun`); `off` = nunca |
 | `UPDATE_CHECK_HOURS` | `24` | Cada cuántas horas busca una versión nueva en GitHub; `0` lo desactiva |
 | `UPDATE_REPO` | el del proyecto | Repositorio de GitHub donde buscar las releases (`propietario/repositorio`) |
+| `WATCH_TARGETS` | vacío | Equipos y servicios a vigilar: `Nombre=destino,Otro=destino` (ver más abajo) |
+| `WATCH_INTERVAL` | `60` | Segundos entre comprobaciones de los servicios vigilados |
+| `WATCH_FAILS` | `3` | Fallos seguidos para dar un servicio por caído |
+| `PRESENCE_MISSES` | `3` | Escaneos seguidos sin ver un dispositivo vigilado para darlo por fuera |
+| `QUIET_HOURS` | `off` | Horario del modo no molestar, `23:00-07:00` (puede cruzar la medianoche) |
+| `HEARTBEAT_URL` | vacío | URL del servicio de latido que da la alarma de caída (ver más abajo) |
+| `HEARTBEAT_SECONDS` | `60` | Segundos entre latidos |
 
 > **Zona horaria:** las horas de los mensajes y del informe programado son las del sistema. Muchas
 > imágenes de Orange Pi vienen en UTC; ajústala con `sudo timedatectl set-timezone Europe/Madrid`.
@@ -140,6 +148,10 @@ Escribe `/menu` (o cualquier texto) y aparece el menú con botones. También hay
 | 📰 Informe | `/informe` | Resumen de las últimas 24 h, la semana o el mes |
 | 📤 Exportar | `/exportar` | Zip con CSV de caídas, velocidad, calidad y salud (7 días, 30 días o todo) |
 | 🔎 Actualización | `/actualizar` | Busca una versión nueva en GitHub y explica cómo instalarla |
+| 👁️ Vigilancia | `/vigilancia` | Estado y disponibilidad de los servicios vigilados (NAS, router, webs…) |
+| 🏠 Presencia | `/presencia [nombre]` | Quién está en casa; con un nombre, vigila o deja de vigilar a ese dispositivo (admin) |
+| 🏷️ Nombrar | `/nombrar <IP o MAC> <nombre>` | Pone nombre a un dispositivo; sin nombre, lo borra (admin) |
+| 🌙 No molestar | `/silencio [horas\|off]` | Retiene los avisos poco urgentes durante unas horas (admin) |
 | ❓ Ayuda | `/ayuda` | Lista de comandos y de avisos automáticos |
 | ℹ️ Acerca de | `/acerca` | Versión, autor, licencia y repositorio |
 | 📡 Dispositivos | `/dispositivos` | Escanea la red: IP, fabricante, MAC, nombre NetBIOS y DNS; marca los nuevos con 🆕 |
@@ -161,6 +173,40 @@ sus miembros tienen el rol del grupo. Con `TELEGRAM_NOTIFY_VIEWERS=1`, los aviso
 (caída y recuperación, reinicio, conexión degradada, fallo de DNS) se copian también a los
 espectadores. Para conocer el id de un chat, escribe al bot y consulta
 `https://api.telegram.org/bot<TOKEN>/getUpdates`.
+
+### Vigilar equipos y servicios
+Define en `config.env` lo que quieres vigilar, como `Nombre=destino` separados por comas:
+
+```
+WATCH_TARGETS=NAS=192.168.1.50:5000,Router=ping://192.168.1.1,Web=https://example.com
+```
+
+| Destino | Cómo se comprueba |
+|---|---|
+| `host:puerto` o `tcp://host:puerto` | Conexión TCP |
+| `ping://host` | `ping` del sistema (si está instalado) |
+| `http://…` / `https://…` | Petición GET; falla con error de red o código ≥ 400 (los 401 y 403 cuentan como «responde») |
+
+Tras `WATCH_FAILS` fallos seguidos (3 por defecto) avisa de la caída, y al recuperarse avisa con su
+duración. Estos avisos **llegan siempre**, también en modo no molestar. Los destinos que no son de la
+red local no se comprueban mientras no hay Internet, para no dar falsas alarmas. La disponibilidad de
+cada servicio aparece en `/vigilancia` y en los informes. Las URL pueden llevar parámetros secretos:
+en los mensajes solo se muestra el nombre del servidor.
+
+### Nombres y presencia de dispositivos
+- **`/nombrar 192.168.1.20 Móvil de Ana`** guarda un nombre (hasta 40 caracteres) que sustituye al
+  nombre técnico en las listas, avisos e informes. Admite IP, MAC completa o parte del nombre.
+- **`/presencia Ana`** activa o desactiva el aviso de llegada y salida de ese dispositivo
+  («🏠 Ana ha llegado a casa», «🚪 Ana se ha ido»). Se da por fuera tras `PRESENCE_MISSES` escaneos
+  seguidos sin verlo (unos 30 min por defecto). Algunos móviles duermen el wifi y pueden aparecer
+  fuera estando en casa; ajusta `PRESENCE_MISSES` si te molesta.
+
+### Modo no molestar
+Con `QUIET_HOURS=23:00-07:00` (horario fijo) o `/silencio 8` (manual, 8 horas), los avisos poco
+urgentes —dispositivos nuevos, velocidad baja, degradación, DNS, temperatura/disco/memoria, cambio de
+IP, llegadas y salidas— **se retienen y se entregan juntos en un resumen** al terminar. El informe
+programado y el aviso de versión nueva esperan a que termine. **Siguen llegando siempre** las caídas de
+Internet, los reinicios y las caídas de servicios vigilados.
 
 ### Gráficas, exportación y versión nueva
 - **Gráficas:** imágenes PNG dibujadas por el propio programa, sin librerías externas.
@@ -215,6 +261,27 @@ el reinicio queda en el historial de caídas con su propio icono (no cuenta como
 
 ---
 
+## Alarma cuando se cae la conexión (latido)
+
+El aviso de «Internet recuperado» llega al volver la conexión, porque **con Internet cortado la Pi no
+puede escribir a Telegram**. Para tener una alarma *mientras* está caída hay que darle la vuelta: la Pi
+avisa cada minuto a un servicio externo (un «latido») y es ese servicio quien manda la alarma a
+Telegram cuando los latidos dejan de llegar. También avisa si la Pi se apaga o se cuelga.
+
+Con [Healthchecks.io](https://healthchecks.io) (gratuito, de código abierto):
+1. Crea una cuenta y un *check* nuevo con periodo de **1 minuto** y margen (*grace time*) de **2–3 minutos**.
+   Ese margen es el retraso tras el que salta la alarma.
+2. En *Integrations*, añade **Telegram** y asígnalo al check.
+3. Copia la *ping URL* del check y ponla en `config.env`:
+   ```
+   HEARTBEAT_URL=https://hc-ping.com/tu-codigo-secreto
+   ```
+4. `sudo systemctl restart internet-check`.
+
+También sirve cualquier servicio que reciba una petición GET periódica, como un monitor de tipo
+*Push* de Uptime Kuma. La URL lleva un código secreto: no se escribe nunca en los logs. `/estado`
+muestra si el latido se está entregando.
+
 ## TUI
 
 ```bash
@@ -266,6 +333,7 @@ Detalles de módulos, hilos y esquema de datos en [docs/arquitectura.md](docs/ar
   - Telegram (`api.telegram.org`): mensajes del bot.
   - `api.ipify.org`, `ifconfig.me`, `icanhazip.com`: para conocer la IP pública.
   - Servidores LibreSpeed de Clouvider: solo durante el test de velocidad.
+  - El servicio de latido que elijas (`HEARTBEAT_URL`): recibe una petición por minuto; es opcional.
   - `api.github.com`: para buscar versiones nuevas; solo se envía una petición anónima de lectura
     (sin datos tuyos ni de la instalación). Se desactiva con `UPDATE_CHECK_HOURS=0`.
 - El escaneo de la red es local (ARP, NetBIOS y DNS inverso) y sus resultados no salen de la Pi,
@@ -286,7 +354,7 @@ python3 monitor.py
 python3 tui.py
 
 # Paquete .deb
-./build-deb.sh 1.6.0
+./build-deb.sh 1.7.0
 
 # Regenerar la base de fabricantes con los CSV del IEEE
 python3 -I tools/build_oui.py <carpeta con oui.csv, mam.csv y oui36.csv>
@@ -304,6 +372,9 @@ python3 -I tools/build_oui.py <carpeta con oui.csv, mam.csv y oui36.csv>
 | `charts.py` | Gráficas PNG sin dependencias (lienzo, fuente de bitmap y codificador PNG) |
 | `export.py` | Exportación del histórico a CSV dentro de un zip |
 | `updates.py` | Búsqueda de versiones nuevas en las releases de GitHub |
+| `watch.py` | Vigilancia de equipos y servicios propios (TCP, ping, HTTP) |
+| `quiet.py` | Modo no molestar: retención de avisos y resumen final |
+| `heartbeat.py` | Latido a un servicio externo para la alarma de caída |
 | `lan.py` | Escaneo de red, fabricantes, NetBIOS y Wake-on-LAN |
 | `db.py` | Almacenamiento SQLite |
 | `tui.py` | Interfaz Turbo Vision |

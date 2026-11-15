@@ -2,14 +2,18 @@
 # Copyright (C) 2026 Miguel González Oreiro <mgoreiro@gmail.com>
 """Textos de informe compartidos por el bot y la TUI, y el test de velocidad con histórico."""
 import logging
+import os
 import sqlite3
 import threading
 import time
 
 import common as c
 import db
+import heartbeat
 import lan
 import metrics
+import quiet
+import watch
 
 log = logging.getLogger("internet-check.reports")
 
@@ -89,6 +93,16 @@ def status_text() -> str:
     if t:
         lines.append(f"🚀 Último test: ⬇️ {t['down']:.1f} / ⬆️ {t['up']:.1f} Mbps · {t['ping']:.0f} ms "
                      f"(hace {c.fmt_ago(now - t['ts'])})")
+    targets = watch.parse_targets()
+    if targets:
+        bad = db.svc_open_names() & {t["name"] for t in targets}
+        lines.append(f"👁️ Servicios vigilados: {len(targets) - len(bad)}/{len(targets)} respondiendo"
+                     + (f" · caídos: {', '.join(sorted(bad))}" if bad else ""))
+    beat = heartbeat.status_line()
+    if beat:
+        lines.append(beat)
+    if quiet.is_quiet(now):
+        lines.append("🌙 Modo no molestar activo")
     return "\n".join(lines)
 
 
@@ -140,7 +154,8 @@ def devices_text() -> str:
     lines = [f"📡 Dispositivos en la red · {len(devs) + 1}", f"• {lan.local_ip()} · {c.NAME} (este equipo)"]
     for d in devs:
         new = db.upsert_device(d["mac"], d["ip"], d.get("netbios") or d["hostname"])
-        lines.append(lan.describe(d, new))
+        lines.append(lan.describe(d, new, db.aliases().get(d["mac"])))
+    lines += ["", "🏷️ Ponle nombre a un equipo:  /nombrar <IP o MAC> <nombre>"]
     return "\n".join(lines)
 
 
@@ -285,9 +300,76 @@ def period_report_text(hours: int = 24) -> str:
                       f"memoria máx {_fmt(max(_vals(hl, 'mem_pct'), default=None), ' %')} · "
                       f"disco {_fmt(hl[-1]['disk_pct'], ' %')}"]
 
+    # Servicios vigilados
+    targets = watch.parse_targets()
+    if targets:
+        lines += ["", "👁️ Servicios vigilados:"]
+        for t in targets:
+            outs_s = db.svc_outages(t["name"], t0, now)
+            down_s = min(db.svc_downtime(t["name"], t0, now), span)
+            lines.append(f"   {t['name']}: {100 * (1 - down_s / span):.2f} %"
+                         + (f" · {len(outs_s)} caída(s), {c.fmt_duration(down_s)}" if outs_s else " · sin caídas"))
+
     # Dispositivos nuevos (se ignora la primera pasada, que solo memoriza lo que había)
     new = db.devices_first_seen_between(max(t0, installed + 600), now)
     if new:
-        names = ", ".join((d["hostname"] or d["mac"]) for d in new[:8])
+        names = ", ".join((d["alias"] or d["hostname"] or d["mac"]) for d in new[:8])
         lines += ["", f"🆕 Dispositivos nuevos: {len(new)} ({names}{'…' if len(new) > 8 else ''})"]
+    return "\n".join(lines)
+
+
+# ---------------------------------------------------------------- vigilancia y presencia
+
+def watch_text() -> str:
+    targets = watch.parse_targets()
+    if not targets:
+        return ("👁️ No hay servicios vigilados.\nAñádelos en /etc/internet-check/config.env, por ejemplo:\n"
+                "WATCH_TARGETS=NAS=192.168.1.50:5000,Router=ping://192.168.1.1,Web=https://example.com")
+    if any(t["name"] not in watch.LAST for t in targets):  # sin comprobación reciente (p. ej. en la TUI)
+        watch.run_once(targets)
+    now = time.time()
+    installed = db.ensure_installed_at()
+    down = db.svc_open_names()
+    lines = [f"👁️ Servicios vigilados · {c.NAME}"]
+    for t in targets:
+        ok, ms, _ts = watch.LAST.get(t["name"], (None, None, None))
+        # 🔴 caído · 🟠 fallando, aún sin dar por caído · ⚪ sin comprobar · 🟢 responde
+        icon = "🔴" if t["name"] in down else "🟠" if ok is False else "⚪" if ok is None else "🟢"
+        lines.append(f"{icon} {t['name']} · {watch.label(t)}" + (f" · {ms:.0f} ms" if ms is not None else ""))
+        detail = []
+        for label, window in (("24 h", 86400), ("7 d", 7 * 86400)):
+            start = max(now - window, installed)
+            if now - start >= 60:
+                lost = min(db.svc_downtime(t["name"], start, now), now - start)
+                detail.append(f"{label} {100 * (1 - lost / (now - start)):.2f} %")
+        open_rows = [r for r in db.svc_outages(t["name"], 0, now) if r["end"] is None]
+        if open_rows:
+            detail.append(f"caído desde {c.fmt_short(open_rows[0]['start'])}")
+        if detail:
+            lines.append("   " + " · ".join(detail))
+    return "\n".join(lines)
+
+
+def presence_text() -> str:
+    devs = db.devices_all()
+    watched = [d for d in devs if d["watch"]]
+    named = [d for d in devs if d["alias"] and not d["watch"]]
+    lines = [f"🏠 Presencia · {c.NAME}"]
+    if not watched:
+        lines += ["No hay dispositivos vigilados.", "",
+                  "1. Ponle nombre:  /nombrar <IP o MAC> <nombre>",
+                  "2. Actívalo:  /presencia <nombre>"]
+    now = time.time()
+    for d in watched:
+        who = d["alias"] or d["hostname"] or d["mac"]
+        if d["present"] == 0:
+            lines.append(f"🚪 {who} · fuera (visto hace {c.fmt_ago(now - (d['last_seen'] or now))})")
+        else:
+            lines.append(f"🏠 {who} · en casa")
+    if named:
+        lines += ["", "Con nombre, sin vigilar: " + ", ".join(d["alias"] for d in named),
+                  "Para vigilar uno:  /presencia <nombre>"]
+    minutes = int(os.environ.get("PRESENCE_MISSES", "3")) * float(os.environ.get("LAN_SCAN_MINUTES", "10"))
+    lines += ["", f"Se da por fuera tras ~{minutes:.0f} min sin verlo. Algunos móviles duermen el wifi y pueden "
+                  "aparecer fuera estando en casa."]
     return "\n".join(lines)

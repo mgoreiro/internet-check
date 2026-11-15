@@ -8,10 +8,13 @@ from datetime import datetime
 
 import common as c
 import db
+import heartbeat
 import lan
 import metrics
+import quiet
 import reports
 import updates
+import watch
 
 log = logging.getLogger("internet-check.jobs")
 
@@ -20,6 +23,7 @@ SPEED_MIN_DOWN = float(os.environ.get("SPEED_MIN_DOWN_MBPS", "0"))        # 0 = 
 IP_CHECK_MINUTES = float(os.environ.get("IP_CHECK_MINUTES", "5"))         # 0 = desactivado
 LAN_SCAN_MINUTES = float(os.environ.get("LAN_SCAN_MINUTES", "10"))        # 0 = desactivado
 UPDATE_CHECK_HOURS = float(os.environ.get("UPDATE_CHECK_HOURS", "24"))    # busca versión nueva; 0 = desactivado
+PRESENCE_MISSES = int(os.environ.get("PRESENCE_MISSES", "3"))             # escaneos sin verlo para darlo por ausente
 
 QUALITY_INTERVAL = float(os.environ.get("QUALITY_INTERVAL", "60"))        # s entre ráfagas; 0 = desactivado
 QUALITY_LOSS_ALERT = float(os.environ.get("QUALITY_LOSS_ALERT", "10"))    # % de pérdida que se considera mala
@@ -63,8 +67,8 @@ def speed_tick():
         reports.SPEED_LOCK.release()
     log.info("Test programado: %.1f/%.1f Mbps, %.0f ms", res["down_mbps"], res["up_mbps"], res["ping_ms"])
     if SPEED_MIN_DOWN and res["down_mbps"] < SPEED_MIN_DOWN:
-        c.send_telegram(f"⚠️ Velocidad baja en {c.NAME}: ⬇️ {res['down_mbps']:.1f} Mbps "
-                        f"(umbral {SPEED_MIN_DOWN:g} Mbps)\n⬆️ {res['up_mbps']:.1f} Mbps · {res['ping_ms']:.0f} ms")
+        quiet.notify(f"⚠️ Velocidad baja en {c.NAME}: ⬇️ {res['down_mbps']:.1f} Mbps "
+                     f"(umbral {SPEED_MIN_DOWN:g} Mbps)\n⬆️ {res['up_mbps']:.1f} Mbps · {res['ping_ms']:.0f} ms")
 
 
 def ip_tick():
@@ -73,7 +77,7 @@ def ip_tick():
         return
     old = db.kv_get("public_ip")
     if old and old != ip:
-        if c.send_telegram(f"🔄 La IP pública de {c.NAME} ha cambiado:\n{old} → {ip}"):
+        if quiet.notify(f"🔄 La IP pública de {c.NAME} ha cambiado:\n{old} → {ip}"):
             db.kv_set("public_ip", ip)
     else:
         db.kv_set("public_ip", ip)
@@ -85,13 +89,21 @@ def lan_tick():
         return
     first = db.kv_get("lan_baseline") is None
     new = [d for d in devs if db.upsert_device(d["mac"], d["ip"], d.get("netbios") or d["hostname"])]
+    events = db.presence_update({d["mac"] for d in devs}, PRESENCE_MISSES)
     if first:
         db.kv_set("lan_baseline", "1")  # primera pasada: solo memoriza lo que hay
         log.info("Red local memorizada: %d dispositivos", len(devs))
         return
     if new:
-        rows = "\n".join(lan.describe(d) for d in new)
-        c.send_telegram(f"🆕 Dispositivo nuevo en la red de {c.NAME}:\n{rows}")
+        names = db.aliases()
+        rows = "\n".join(lan.describe(d, alias=names.get(d["mac"])) for d in new)
+        quiet.notify(f"🆕 Dispositivo nuevo en la red de {c.NAME}:\n{rows}")
+    for row, kind in events:  # llegadas y salidas de los dispositivos vigilados
+        who = row["alias"] or row["hostname"] or row["mac"]
+        if kind == "arrived":
+            quiet.notify(f"🏠 {who} ha llegado a casa.")
+        else:
+            quiet.notify(f"🚪 {who} se ha ido: no se ve en la red desde hace {c.fmt_ago(time.time() - (row['last_seen'] or 0))}.")
 
 
 # ---- calidad de la conexión ----
@@ -108,18 +120,18 @@ def evaluate_quality(q):
               f"(máx {q['rtt_max'] or 0:.0f}) · jitter {q['jitter']:.0f} ms")
     if not _q["degraded"] and _q["bad"] >= QUALITY_ALERT_BURSTS:
         _q["degraded"] = True
-        c.send_telegram(f"⚠️ Conexión degradada en {c.NAME}\n{detail}", broadcast=True)
+        quiet.notify(f"⚠️ Conexión degradada en {c.NAME}\n{detail}", broadcast=True)
     elif _q["degraded"] and _q["good"] >= QUALITY_ALERT_BURSTS:
         _q["degraded"] = False
-        c.send_telegram(f"✅ Conexión estable de nuevo en {c.NAME}\n{detail}", broadcast=True)
+        quiet.notify(f"✅ Conexión estable de nuevo en {c.NAME}\n{detail}", broadcast=True)
 
     _q["dns_bad"] = 0 if q["dns_ok"] else _q["dns_bad"] + 1
     if not _q["dns_down"] and _q["dns_bad"] >= QUALITY_ALERT_BURSTS:
         _q["dns_down"] = True
-        c.send_telegram(f"⚠️ El DNS no responde en {c.NAME}, pero hay conexión a Internet.", broadcast=True)
+        quiet.notify(f"⚠️ El DNS no responde en {c.NAME}, pero hay conexión a Internet.", broadcast=True)
     elif _q["dns_down"] and q["dns_ok"]:
         _q["dns_down"] = False
-        c.send_telegram(f"✅ El DNS vuelve a responder en {c.NAME} ({q['dns_ms']:.0f} ms).", broadcast=True)
+        quiet.notify(f"✅ El DNS vuelve a responder en {c.NAME} ({q['dns_ms']:.0f} ms).", broadcast=True)
 
 
 def quality_tick():
@@ -142,10 +154,10 @@ def _watch(key, value, limit, clear_margin, on_msg, off_msg):
         return
     if not _alerted.get(key) and value >= limit:
         _alerted[key] = True
-        c.send_telegram(on_msg)
+        quiet.notify(on_msg)
     elif _alerted.get(key) and value < limit - clear_margin:
         _alerted[key] = False
-        c.send_telegram(off_msg)
+        quiet.notify(off_msg)
 
 
 def health_tick():
@@ -176,7 +188,7 @@ def _report_time():
 
 def report_tick():
     when = _report_time()
-    if when is None:
+    if when is None or quiet.is_quiet():  # en modo no molestar se espera a que termine
         return
     now = datetime.now()
     if (now.hour, now.minute) < when:
@@ -195,6 +207,8 @@ def report_tick():
 
 def update_tick():
     """Avisa una sola vez de cada versión nueva; nunca instala nada."""
+    if quiet.is_quiet():
+        return
     rel, newer, error = updates.check()
     if error:
         log.info("No se pudo comprobar si hay versión nueva: %s", error)
@@ -202,6 +216,17 @@ def update_tick():
     if newer and db.kv_get("update_notified") != rel["version"]:
         if c.send_telegram(updates.message(rel)):
             db.kv_set("update_notified", rel["version"])
+
+
+# ---- vigilancia de servicios, latido y modo no molestar ----
+
+def watch_tick():
+    # Las caídas de los servicios vigilados son urgentes: llegan aunque esté activo el modo no molestar
+    watch.tick(lambda text: c.send_telegram(text, broadcast=True))
+
+
+def quiet_tick():
+    quiet.flush()
 
 
 def start_all():
@@ -216,6 +241,9 @@ def start_all():
         ("health", HEALTH_MINUTES, HEALTH_MINUTES * 60, health_tick, 15),
         ("report", 1 if _report_time() else 0, 60, report_tick, 90),
         ("update", UPDATE_CHECK_HOURS, UPDATE_CHECK_HOURS * 3600, update_tick, 180),
+        ("watch", watch.WATCH_INTERVAL if watch.parse_targets() else 0, watch.WATCH_INTERVAL, watch_tick, 40),
+        ("heartbeat", heartbeat.INTERVAL if heartbeat.URL else 0, heartbeat.INTERVAL, heartbeat.tick, 5),
+        ("quiet", 1, 60, quiet_tick, 25),
     ]
     for name, enabled, interval, fn, delay in jobs:
         if enabled <= 0:

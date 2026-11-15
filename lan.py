@@ -198,9 +198,11 @@ def scan(net=None):
     return devices
 
 
-def describe(d, new=False):
-    """Texto de un dispositivo en dos líneas: IP · fabricante / MAC · nombres."""
-    first = f"• {d['ip']} · {d.get('vendor') or 'fabricante desconocido'}{' 🆕' if new else ''}"
+def describe(d, new=False, alias=None):
+    """Texto de un dispositivo en dos líneas: IP · nombre o fabricante / MAC · nombres."""
+    vendor = d.get("vendor") or "fabricante desconocido"
+    title = f"{alias} ({vendor})" if alias else vendor
+    first = f"• {d['ip']} · {title}{' 🆕' if new else ''}"
     names = []
     if d.get("netbios"):
         names.append(f"NetBIOS: {d['netbios']}")
