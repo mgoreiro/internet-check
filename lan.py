@@ -1,5 +1,5 @@
 # SPDX-License-Identifier: GPL-3.0-or-later
-# Copyright (C) 2026 mgoreiro <mgoreiro@gmail.com>
+# Copyright (C) 2026 Miguel González Oreiro <mgoreiro@gmail.com>
 """Escaneo de la red local (sin root ni nmap) y Wake-on-LAN."""
 import concurrent.futures as cf
 import gzip

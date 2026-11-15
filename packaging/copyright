@@ -1,10 +1,10 @@
 Format: https://www.debian.org/doc/packaging-manuals/copyright-format/1.0/
 Upstream-Name: internet-check
-Upstream-Contact: mgoreiro <mgoreiro@gmail.com>
+Upstream-Contact: Miguel González Oreiro <mgoreiro@gmail.com>
 Source: https://github.com/mgoreiro/internet-check
 
 Files: *
-Copyright: 2026 mgoreiro <mgoreiro@gmail.com>
+Copyright: 2026 Miguel González Oreiro <mgoreiro@gmail.com>
 License: GPL-3+
 
 Files: data/oui.txt.gz

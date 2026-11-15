@@ -1,6 +1,6 @@
 #!/bin/sh
 # SPDX-License-Identifier: GPL-3.0-or-later
-# Copyright (C) 2026 mgoreiro <mgoreiro@gmail.com>
+# Copyright (C) 2026 Miguel González Oreiro <mgoreiro@gmail.com>
 # Lanzador de la TUI; necesita root para leer /etc/internet-check/config.env
 [ "$(id -u)" -eq 0 ] || exec sudo /usr/bin/internet-check-tui "$@"
 exec python3 /usr/lib/internet-check/tui.py "$@"

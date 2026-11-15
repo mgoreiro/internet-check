@@ -1,5 +1,5 @@
 # SPDX-License-Identifier: GPL-3.0-or-later
-# Copyright (C) 2026 mgoreiro <mgoreiro@gmail.com>
+# Copyright (C) 2026 Miguel González Oreiro <mgoreiro@gmail.com>
 """Bot de Telegram bidireccional (long polling) con menú de botones.
 
 Solo responde al chat configurado en TELEGRAM_CHAT_ID.
@@ -12,6 +12,7 @@ import time
 
 import common as c
 import db
+import info
 import lan
 import reports
 
@@ -25,8 +26,13 @@ MENU = {
          {"text": "📉 Caídas", "callback_data": "outages"}],
         [{"text": "📈 Velocidad (histórico)", "callback_data": "speeds"},
          {"text": "📡 Dispositivos", "callback_data": "devices"}],
-        [{"text": "💡 Encender equipo", "callback_data": "wol"},
-         {"text": "🔄 Reiniciar", "callback_data": "reboot"}],
+        [{"text": "📶 Calidad", "callback_data": "quality"},
+         {"text": "🩺 Salud", "callback_data": "health"}],
+        [{"text": "📰 Informe", "callback_data": "report"},
+         {"text": "💡 Encender equipo", "callback_data": "wol"}],
+        [{"text": "🔄 Reiniciar", "callback_data": "reboot"},
+         {"text": "❓ Ayuda", "callback_data": "help"},
+         {"text": "ℹ️ Acerca de", "callback_data": "about"}],
     ]
 }
 COMMANDS = [
@@ -37,8 +43,13 @@ COMMANDS = [
     {"command": "caidas", "description": "Historial de caídas"},
     {"command": "historico", "description": "Histórico de velocidad"},
     {"command": "dispositivos", "description": "Dispositivos de la red"},
+    {"command": "calidad", "description": "Latencia, pérdida y DNS"},
+    {"command": "salud", "description": "Temperatura, memoria y disco de la Pi"},
+    {"command": "informe", "description": "Informe de 24 h, semana o mes"},
     {"command": "encender", "description": "Encender un equipo (Wake-on-LAN)"},
     {"command": "reiniciar", "description": "Reiniciar la Orange Pi"},
+    {"command": "ayuda", "description": "Ayuda y lista de comandos"},
+    {"command": "acerca", "description": "Versión, autor y licencia"},
 ]
 REBOOT_ENABLED = os.environ.get("REBOOT_ENABLED", "1") != "0"
 REBOOT_CONFIRM_SECONDS = 60
@@ -84,6 +95,33 @@ def do_speeds():
 def do_devices():
     c.send_telegram("⏳ Escaneando la red…")
     c.send_telegram(reports.devices_text(), MENU)
+
+
+def do_help():
+    c.send_telegram(info.bot_help(), MENU)
+
+
+def do_about():
+    c.send_telegram(info.bot_about(), MENU)
+
+
+def do_quality():
+    c.send_telegram(reports.quality_text(), MENU)
+
+
+def do_health():
+    c.send_telegram(reports.health_text(), MENU)
+
+
+def do_report_menu():
+    c.send_telegram("¿Qué periodo quieres?", {"inline_keyboard": [[
+        {"text": "24 horas", "callback_data": "report:24"},
+        {"text": "Semana", "callback_data": "report:168"},
+        {"text": "Mes", "callback_data": "report:720"}]]})
+
+
+def do_report_send(hours):
+    c.send_telegram(reports.period_report_text(hours), MENU)
 
 
 def do_wol_menu():
@@ -157,6 +195,11 @@ ACTIONS = {
     "outages": do_outages, "/caidas": do_outages,
     "speeds": do_speeds, "/historico": do_speeds,
     "devices": do_devices, "/dispositivos": do_devices,
+    "help": do_help, "/ayuda": do_help, "/help": do_help,
+    "about": do_about, "/acerca": do_about,
+    "quality": do_quality, "/calidad": do_quality,
+    "health": do_health, "/salud": do_health,
+    "report": do_report_menu, "/informe": do_report_menu,
     "wol": do_wol_menu, "/encender": do_wol_menu,
     "reboot": do_reboot_ask, "/reiniciar": do_reboot_ask,
     "reboot_yes": do_reboot_confirm, "cancel": do_cancel,
@@ -183,6 +226,9 @@ def handle(update: dict) -> None:
     log.info("Recibido %r del chat %s", key, chat)
     if key and key.startswith("wol:") and key[4:].isdigit():
         threading.Thread(target=do_wol_send, args=(int(key[4:]),), daemon=True).start()
+        return
+    if key and key.startswith("report:") and key[7:].isdigit() and int(key[7:]) in (24, 168, 720):
+        threading.Thread(target=_safe, args=(lambda h=int(key[7:]): do_report_send(h),), daemon=True).start()
         return
     action = ACTIONS.get(key)
     if action is None:

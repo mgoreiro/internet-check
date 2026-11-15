@@ -7,10 +7,13 @@ controlado por un **bot de Telegram** y por una **TUI** al estilo Turbo Vision.
 - Distingue entre caída de Internet, apagón y reinicio solicitado, y calcula la disponibilidad.
 - Bot bidireccional con menú de botones: estado, test de velocidad, IP pública, historiales,
   dispositivos de la red, Wake-on-LAN y reinicio remoto.
-- Avisos automáticos: test de velocidad programado, cambio de IP pública y dispositivos nuevos.
+- Calidad de la conexión (latencia, jitter, pérdida y DNS), salud de la Pi (temperatura, memoria,
+  disco) e **informes** automáticos diarios y semanales.
+- Avisos automáticos: test de velocidad programado, cambio de IP pública, dispositivos nuevos,
+  conexión degradada, fallo de DNS y alarmas de salud del equipo.
 - Solo **Python 3 estándar**: sin dependencias, sin `pip`, sin root para comprobar la conexión.
 
-> Autor: **mgoreiro** · Licencia: [GPL-3.0-or-later](LICENSE)
+> Autor: **Miguel González Oreiro** · Licencia: [GPL-3.0-or-later](LICENSE)
 
 ---
 
@@ -41,14 +44,14 @@ controlado por un **bot de Telegram** y por una **TUI** al estilo Turbo Vision.
 El paquete se genera en cualquier máquina, también macOS (no necesita `dpkg-deb`):
 
 ```bash
-./build-deb.sh 1.4.1
-scp internet-check_1.4.1_all.deb usuario@orangepi:
+./build-deb.sh 1.5.2
+scp internet-check_1.5.2_all.deb usuario@orangepi:
 ```
 
 En la Orange Pi:
 
 ```bash
-sudo apt install ./internet-check_1.4.1_all.deb
+sudo apt install ./internet-check_1.5.2_all.deb
 sudo nano /etc/internet-check/bot.env      # token y chat id
 sudo systemctl restart internet-check
 journalctl -u internet-check -f
@@ -95,6 +98,21 @@ ajustes comentados están en `/usr/share/internet-check/`.
 | `WOL_DEVICES` | vacío | Equipos para Wake-on-LAN: `PC=AA:BB:CC:DD:EE:FF,NAS=11:22:…` |
 | `WOL_BROADCAST` | `255.255.255.255` | Dirección de difusión del paquete mágico |
 | `REBOOT_ENABLED` | `1` | Permite reiniciar desde el bot; `0` lo desactiva |
+| `QUALITY_INTERVAL` | `60` | Segundos entre medidas de calidad; `0` las desactiva |
+| `QUALITY_PROBES` | `10` | Conexiones de prueba por medida |
+| `QUALITY_LOSS_ALERT` | `10` | % de pérdida que se considera conexión degradada |
+| `QUALITY_RTT_ALERT` | `300` | ms de latencia que se considera conexión degradada |
+| `QUALITY_ALERT_BURSTS` | `3` | Medidas seguidas para avisar (y para dar la conexión por recuperada) |
+| `HEALTH_MINUTES` | `5` | Minutos entre lecturas de salud; `0` las desactiva |
+| `HEALTH_TEMP_ALERT` | `75` | °C de CPU a partir de los que se avisa |
+| `HEALTH_DISK_ALERT` | `90` | % de disco usado a partir del que se avisa |
+| `HEALTH_MEM_ALERT` | `90` | % de memoria usada a partir del que se avisa |
+| `RETENTION_DAYS` | `30` | Días que se conservan las medidas de calidad y salud |
+| `REPORT_DAILY_TIME` | `08:00` | Hora del informe diario, **hora local de la Pi**; `off` lo desactiva |
+| `REPORT_WEEKLY_DAY` | `mon` | Día en que el informe diario pasa a ser semanal (`mon`…`sun`); `off` = nunca |
+
+> **Zona horaria:** las horas de los mensajes y del informe programado son las del sistema. Muchas
+> imágenes de Orange Pi vienen en UTC; ajústala con `sudo timedatectl set-timezone Europe/Madrid`.
 
 Para uso avanzado: `STATE_FILE`, `DB_FILE`, `OUI_FILE`, `INTERNET_CHECK_CONFIG` e
 `INTERNET_CHECK_BOT_CONFIG` cambian las rutas de los ficheros de datos y configuración.
@@ -112,6 +130,11 @@ Escribe `/menu` (o cualquier texto) y aparece el menú con botones. También hay
 | 🌍 IP pública | `/ip` | IP pública actual |
 | 📉 Caídas | `/caidas` | Últimas caídas (internet, apagón o reinicio) y disponibilidad 24 h / 7 d / 30 d |
 | 📈 Velocidad (histórico) | `/historico` | Mini-gráfica de tendencia, medias y últimos tests |
+| 📶 Calidad | `/calidad` | Latencia, jitter, pérdida y DNS: última hora, 24 h y gráfica por hora |
+| 🩺 Salud | `/salud` | Temperatura de CPU, carga, memoria, disco y tamaño de la base de datos |
+| 📰 Informe | `/informe` | Resumen de las últimas 24 h, la semana o el mes |
+| ❓ Ayuda | `/ayuda` | Lista de comandos y de avisos automáticos |
+| ℹ️ Acerca de | `/acerca` | Versión, autor, licencia y repositorio |
 | 📡 Dispositivos | `/dispositivos` | Escanea la red: IP, fabricante, MAC, nombre NetBIOS y DNS; marca los nuevos con 🆕 |
 | 💡 Encender equipo | `/encender` | Envía un paquete Wake-on-LAN al equipo elegido |
 | 🔄 Reiniciar | `/reiniciar` | Reinicia la Orange Pi tras una confirmación que caduca a los 60 s |
@@ -152,6 +175,15 @@ el reinicio queda en el historial de caídas con su propio icono (no cuenta como
 - **Cambio de IP pública**, comprobada cada `IP_CHECK_MINUTES`.
 - **Dispositivo nuevo en la red**, con escaneo cada `LAN_SCAN_MINUTES`. La primera pasada solo
   memoriza lo que hay, sin avisar.
+- **Conexión degradada**: si la pérdida o la latencia superan los umbrales durante varias medidas
+  seguidas, avisa; otro aviso indica cuándo se estabiliza. Un corte total no cuenta como
+  degradación (lo gestiona el aviso de caída).
+- **DNS caído**: avisa si hay Internet pero el resolutor del sistema no responde.
+- **Salud del equipo**: avisa una vez al superar el umbral de temperatura, disco o memoria, y otra
+  al normalizarse.
+- **Informe programado** a `REPORT_DAILY_TIME`: diario, y semanal el día `REPORT_WEEKLY_DAY`.
+  Resume disponibilidad, caídas, velocidad, calidad, estado del equipo y dispositivos nuevos. Si la
+  Pi estaba apagada a esa hora, se envía al arrancar.
 
 ---
 
@@ -167,12 +199,14 @@ desplegables, ventanas con borde doble y sombra, diálogos con botón y barra de
 | Tecla | Acción |
 |---|---|
 | `F10` | Menú (`←` `→` entre menús, `↑` `↓` opciones, `Enter` elegir, `Esc` cerrar) |
-| `F1` | Acerca de |
+| `F1` | Ayuda (también en el menú **Ayuda** → *Contenido*, *Teclas y atajos* y *Acerca de…*) |
 | `F2` / `F5` / `F6` / `F7` | Estado / historial de caídas / histórico de velocidad / dispositivos |
+| `F8` / `F9` | Calidad de la conexión / salud de la Pi |
 | `F3` / `F4` | Test de velocidad / IP pública (se envían además al bot) |
 | `Enter` | Abre la opción de la lista · `q` o `Esc` sale |
 
-El lanzador se relanza con `sudo` para poder leer `bot.env`.
+El menú **Informes** abre el resumen diario, semanal o mensual. El lanzador se relanza con `sudo`
+para poder leer `bot.env`.
 
 ---
 
@@ -181,7 +215,10 @@ El lanzador se relanza con `sudo` para poder leer `bot.env`.
 - **Detección:** cada `CHECK_INTERVAL` segundos abre una conexión TCP a los destinos de
   `CHECK_HOSTS`. Tras `FAIL_THRESHOLD` fallos seguidos da la conexión por caída y, al volver,
   avisa. Si Telegram no responde al recuperar, reintenta cada 15 s hasta enviarlo.
-- **Datos:** caídas, tests de velocidad y dispositivos se guardan en SQLite
+- **Calidad:** cada `QUALITY_INTERVAL` s lanza una ráfaga de `QUALITY_PROBES` conexiones TCP y mide
+  latencia, jitter y pérdida, y comprueba que el DNS resuelve. Los resultados se guardan para los
+  informes y alimentan los avisos de degradación.
+- **Datos:** caídas, tests de velocidad, calidad, salud y dispositivos se guardan en SQLite
   (`/var/lib/internet-check/data.db`).
 - **Disponibilidad:** se calcula sobre la ventana pedida, acotada al inicio de la monitorización.
 
@@ -218,7 +255,7 @@ python3 monitor.py
 python3 tui.py
 
 # Paquete .deb
-./build-deb.sh 1.4.1
+./build-deb.sh 1.5.2
 
 # Regenerar la base de fabricantes con los CSV del IEEE
 python3 -I tools/build_oui.py <carpeta con oui.csv, mam.csv y oui36.csv>
@@ -229,8 +266,10 @@ python3 -I tools/build_oui.py <carpeta con oui.csv, mam.csv y oui36.csv>
 | `monitor.py` | Demonio: detección de caídas y arranque del bot y las tareas |
 | `bot.py` | Bot de Telegram: menú, acciones y reinicio |
 | `jobs.py` | Tareas periódicas: test programado, IP y dispositivos |
-| `reports.py` | Textos de estado, historiales y dispositivos |
+| `reports.py` | Textos de estado, historiales, calidad, salud e informes |
 | `common.py` | Configuración, Telegram, IP pública y test de velocidad |
+| `metrics.py` | Calidad de la conexión (latencia, jitter, pérdida, DNS) y salud de la Pi |
+| `info.py` | Textos de ayuda y «acerca de» (versión, autor, licencia) de la TUI y del bot |
 | `lan.py` | Escaneo de red, fabricantes, NetBIOS y Wake-on-LAN |
 | `db.py` | Almacenamiento SQLite |
 | `tui.py` | Interfaz Turbo Vision |
@@ -240,7 +279,7 @@ python3 -I tools/build_oui.py <carpeta con oui.csv, mam.csv y oui36.csv>
 
 ## Licencia y créditos
 
-Copyright © 2026 mgoreiro <mgoreiro@gmail.com>
+Copyright © 2026 Miguel González Oreiro <mgoreiro@gmail.com>
 
 Este programa es software libre: puedes redistribuirlo y modificarlo bajo los términos de la
 **GNU General Public License** publicada por la Free Software Foundation, ya sea la versión 3 o

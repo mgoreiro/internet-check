@@ -1,5 +1,5 @@
 # SPDX-License-Identifier: GPL-3.0-or-later
-# Copyright (C) 2026 mgoreiro <mgoreiro@gmail.com>
+# Copyright (C) 2026 Miguel González Oreiro <mgoreiro@gmail.com>
 """Funciones compartidas por el demonio (monitor.py), el bot (bot.py) y la TUI (tui.py).
 
 Solo librería estándar (Python 3.7+).

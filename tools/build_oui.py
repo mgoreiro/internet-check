@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 # SPDX-License-Identifier: GPL-3.0-or-later
-# Copyright (C) 2026 mgoreiro <mgoreiro@gmail.com>
+# Copyright (C) 2026 Miguel González Oreiro <mgoreiro@gmail.com>
 """Genera data/oui.txt.gz (prefijo MAC -> fabricante) a partir de los CSV del IEEE.
 
 Uso: python3 -I tools/build_oui.py <carpeta con oui.csv, mam.csv y oui36.csv> [salida.gz]

@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 # SPDX-License-Identifier: GPL-3.0-or-later
-# Copyright (C) 2026 mgoreiro <mgoreiro@gmail.com>
+# Copyright (C) 2026 Miguel González Oreiro <mgoreiro@gmail.com>
 """Monitoriza la conexión a Internet y avisa por Telegram al recuperarla.
 
 Además atiende un bot bidireccional (test de velocidad, IP pública).

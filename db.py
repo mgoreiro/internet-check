@@ -1,5 +1,5 @@
 # SPDX-License-Identifier: GPL-3.0-or-later
-# Copyright (C) 2026 mgoreiro <mgoreiro@gmail.com>
+# Copyright (C) 2026 Miguel González Oreiro <mgoreiro@gmail.com>
 """Almacenamiento SQLite (caídas, tests de velocidad, dispositivos, pares clave/valor).
 
 Se abre una conexión por operación: es seguro entre hilos y entre procesos
@@ -20,6 +20,12 @@ CREATE TABLE IF NOT EXISTS speedtests(
 CREATE TABLE IF NOT EXISTS devices(
     mac TEXT PRIMARY KEY, ip TEXT, hostname TEXT, first_seen REAL, last_seen REAL);
 CREATE TABLE IF NOT EXISTS kv(key TEXT PRIMARY KEY, value TEXT);
+CREATE TABLE IF NOT EXISTS quality(
+    ts REAL NOT NULL, rtt_avg REAL, rtt_max REAL, jitter REAL, loss REAL, dns_ms REAL, dns_ok INTEGER);
+CREATE INDEX IF NOT EXISTS idx_quality_ts ON quality(ts);
+CREATE TABLE IF NOT EXISTS health(
+    ts REAL NOT NULL, temp REAL, load REAL, mem_pct REAL, disk_pct REAL, db_kb REAL);
+CREATE INDEX IF NOT EXISTS idx_health_ts ON health(ts);
 """
 
 
@@ -124,3 +130,43 @@ def upsert_device(mac, ip, hostname, now=None) -> bool:
         con.execute("INSERT INTO devices(mac,ip,hostname,first_seen,last_seen) VALUES(?,?,?,?,?)",
                     (mac, ip, hostname, now, now))
         return True
+
+
+# ---- calidad de la conexión y salud del equipo ----
+
+def add_quality(q):
+    _exec("INSERT INTO quality(ts,rtt_avg,rtt_max,jitter,loss,dns_ms,dns_ok) VALUES(?,?,?,?,?,?,?)",
+          (q["ts"], q.get("rtt_avg"), q.get("rtt_max"), q.get("jitter"), q.get("loss"),
+           q.get("dns_ms"), None if q.get("dns_ok") is None else int(q["dns_ok"])))
+
+
+def quality_between(t0, t1):
+    return _query("SELECT * FROM quality WHERE ts >= ? AND ts <= ? ORDER BY ts", (t0, t1))
+
+
+def add_health(h):
+    _exec("INSERT INTO health(ts,temp,load,mem_pct,disk_pct,db_kb) VALUES(?,?,?,?,?,?)",
+          (h["ts"], h.get("temp"), h.get("load"), h.get("mem_pct"), h.get("disk_pct"), h.get("db_kb")))
+
+
+def health_between(t0, t1):
+    return _query("SELECT * FROM health WHERE ts >= ? AND ts <= ? ORDER BY ts", (t0, t1))
+
+
+def prune(before):
+    """Borra medidas antiguas (calidad y salud). Caídas y tests de velocidad se conservan."""
+    return _exec("DELETE FROM quality WHERE ts < ?", (before,)) + _exec("DELETE FROM health WHERE ts < ?", (before,))
+
+
+# ---- consultas por periodo (informes) ----
+
+def outages_between(t0, t1):
+    return _query("SELECT * FROM outages WHERE COALESCE(end,?) > ? AND start < ? ORDER BY start", (t1, t0, t1))
+
+
+def speedtests_between(t0, t1):
+    return _query("SELECT * FROM speedtests WHERE ts >= ? AND ts <= ? ORDER BY ts", (t0, t1))
+
+
+def devices_first_seen_between(t0, t1):
+    return _query("SELECT * FROM devices WHERE first_seen >= ? AND first_seen <= ? ORDER BY first_seen", (t0, t1))

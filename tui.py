@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 # SPDX-License-Identifier: GPL-3.0-or-later
-# Copyright (C) 2026 mgoreiro <mgoreiro@gmail.com>
+# Copyright (C) 2026 Miguel González Oreiro <mgoreiro@gmail.com>
 """TUI estilo Turbo Vision (curses): escritorio, barra de menú, ventanas con sombra y diálogos.
 
 Estado, test de velocidad, IP pública, historiales y dispositivos de la red.
@@ -14,6 +14,7 @@ import sys
 import textwrap
 
 import common as c
+import info
 import reports
 
 # ---------------------------------------------------------------- datos
@@ -25,27 +26,43 @@ LIST_ITEMS = [
     ("Historial de caídas", "F5", "outages"),
     ("Histórico de velocidad", "F6", "speeds"),
     ("Dispositivos de la red", "F7", "devices"),
+    ("Calidad de la conexión", "F8", "quality"),
+    ("Salud de la Pi", "F9", "health"),
+    ("Ayuda", "F1", "help"),
     ("Salir", "q", "quit"),
 ]
 # (título de la barra, [(etiqueta con ~tecla~, atajo, acción)])
 MENUS = [
-    ("≡", [("~A~cerca de...", "F1", "about"), ("~S~alir", "q", "quit")]),
+    ("≡", [("~A~cerca de...", "", "about"), ("~S~alir", "q", "quit")]),
     ("Monitor", [("~E~stado", "F2", "status"), ("~I~P pública", "F4", "ip"),
-                 ("~H~istorial de caídas", "F5", "outages")]),
+                 ("~H~istorial de caídas", "F5", "outages"), ("~C~alidad de la conexión", "F8", "quality"),
+                 ("~S~alud de la Pi", "F9", "health")]),
     ("Velocidad", [("~T~est de velocidad", "F3", "speed"), ("~H~istórico", "F6", "speeds")]),
     ("Red", [("~D~ispositivos", "F7", "devices")]),
+    ("Informes", [("~D~iario (24 h)", "", "report24"), ("~S~emanal (7 días)", "", "report168"),
+                  ("~M~ensual (30 días)", "", "report720")]),
+    ("Ayuda", [("~C~ontenido", "F1", "help"), ("~T~eclas y atajos", "", "keys"),
+               ("~A~cerca de...", "", "about")]),
 ]
 FKEYS = {
-    curses.KEY_F1: "about", curses.KEY_F2: "status", curses.KEY_F3: "speed", curses.KEY_F4: "ip",
+    curses.KEY_F1: "help", curses.KEY_F2: "status", curses.KEY_F3: "speed", curses.KEY_F4: "ip",
     curses.KEY_F5: "outages", curses.KEY_F6: "speeds", curses.KEY_F7: "devices",
+    curses.KEY_F8: "quality", curses.KEY_F9: "health",
 }
 REPORTS = {
     "status": ("Estado", reports.status_text),
     "outages": ("Historial de caídas", reports.history_text),
     "speeds": ("Histórico de velocidad", reports.speed_history_text),
     "devices": ("Dispositivos de la red", reports.devices_text),
+    "help": ("Ayuda", info.tui_help),
+    "keys": ("Teclas y atajos", info.tui_keys),
+    "quality": ("Calidad de la conexión", reports.quality_text),
+    "health": ("Salud de la Pi", reports.health_text),
+    "report24": ("Informe diario", lambda: reports.period_report_text(24)),
+    "report168": ("Informe semanal", lambda: reports.period_report_text(168)),
+    "report720": ("Informe mensual", lambda: reports.period_report_text(720)),
 }
-DEFAULT_STATUS = "~F2~ Estado  ~F3~ Test  ~F4~ IP  ~F5~ Caídas  ~F6~ Hist.  ~F7~ Red  ~F10~ Menú  ~q~ Salir"
+DEFAULT_STATUS = "~F1~ Ayuda ~F2~ Estado ~F3~ Test ~F4~ IP ~F5~ Caídas ~F7~ Red ~F8~ Calidad ~F9~ Salud ~F10~ Menú"
 
 # Emojis: ocupan ancho doble y descuadran curses
 EMOJI = re.compile("[\U00010000-\U0010ffff☀-➿⬀-⯿️‍]")
@@ -391,15 +408,7 @@ def run_report(action):
 
 
 def about():
-    msgbox("Acerca de", [
-        "internet-check",
-        "Monitor de conexion + bot de Telegram",
-        "",
-        f"Equipo: {c.NAME}",
-        "Ajustes: /etc/internet-check/config.env",
-        "Bot:     /etc/internet-check/bot.env",
-        "Interfaz estilo Turbo Vision",
-    ])
+    msgbox("Acerca de", info.about_lines())
 
 
 def act(action):

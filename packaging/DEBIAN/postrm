@@ -1,6 +1,11 @@
 #!/bin/sh
 set -e
 systemctl daemon-reload || true
+if [ "$1" = "remove" ] || [ "$1" = "purge" ]; then
+    # Python crea __pycache__ al ejecutar como root; dpkg no lo conoce y dejaría la carpeta huérfana
+    rm -rf /usr/lib/internet-check/__pycache__
+    rmdir /usr/lib/internet-check 2>/dev/null || true
+fi
 if [ "$1" = "purge" ]; then
     rm -rf /var/lib/internet-check /etc/internet-check
 fi

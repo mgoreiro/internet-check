@@ -2,6 +2,25 @@
 
 Formato basado en [Keep a Changelog](https://keepachangelog.com/es-ES/1.1.0/).
 
+## [1.5.2] — 2026-11-15
+### Corregido
+- Autor: se identifica como Miguel González Oreiro en cabeceras, documentación, «Acerca de» y
+  metadatos del paquete.
+- Al desinstalar se elimina la carpeta `__pycache__` que Python crea en `/usr/lib/internet-check`.
+
+## [1.5.1] — 2026-11-15
+### Añadido
+- Ayuda y «Acerca de» en la TUI (menú Ayuda, `F1`, teclas y atajos) y en el bot (`/ayuda`, `/acerca`).
+- La versión instalada se muestra en «Acerca de».
+
+## [1.5.0] — 2026-11-15
+### Añadido
+- Calidad de la conexión: latencia, jitter, pérdida y DNS, con aviso de conexión degradada y de
+  fallo de DNS (botón 📶 y `/calidad`).
+- Salud de la Pi: temperatura, carga, memoria, disco y base de datos, con alarmas (botón 🩺 y `/salud`).
+- Informes de 24 h, semana y mes (botón 📰 y `/informe`), y envío programado diario y semanal.
+- TUI: pantallas de calidad y salud (F8, F9) y menú Informes.
+
 ## [1.4.1] — 2026-11-15
 ### Añadido
 - Licencia GPL-3.0-or-later, cabeceras de autor y documentación (README, arquitectura).

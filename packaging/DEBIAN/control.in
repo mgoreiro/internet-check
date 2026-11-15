@@ -5,7 +5,7 @@ Priority: optional
 Architecture: all
 Depends: python3 (>= 3.7), systemd
 Recommends: sudo
-Maintainer: mgoreiro <mgoreiro@gmail.com>
+Maintainer: Miguel González Oreiro <mgoreiro@gmail.com>
 Homepage: https://github.com/mgoreiro/internet-check
 Description: Monitor de conexión a Internet con bot de Telegram y TUI
  Comprueba periódicamente la conectividad y avisa por Telegram al
