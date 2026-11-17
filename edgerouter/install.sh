@@ -30,7 +30,7 @@ except ImportError:
 try:
     u.urlopen("https://api.telegram.org", timeout=15)
 except u.HTTPError:
-    pass  # el servidor contestó (404): TLS y certificados funcionan
+    pass  # el servidor contesto (404): TLS y certificados funcionan
 except Exception as e:
     sys.stderr.write("%s\n" % e)
     sys.exit(1)

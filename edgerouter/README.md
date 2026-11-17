@@ -27,14 +27,14 @@ En el Mac:
 
 ```bash
 cd edgerouter
-./build.sh 1.0.0            # añade --oui para ver el fabricante de cada MAC (+475 kB)
-scp internet-check-edgerouter_1.0.0.tar.gz ubnt@192.168.1.1:/tmp/
+./build.sh 1.0.1            # añade --oui para ver el fabricante de cada MAC (+475 kB)
+scp internet-check-edgerouter_1.0.1.tar.gz ubnt@192.168.1.1:/tmp/
 ```
 
 En el router:
 
 ```bash
-sudo tar -C /config -xzf /tmp/internet-check-edgerouter_1.0.0.tar.gz
+sudo tar -C /config -xzf /tmp/internet-check-edgerouter_1.0.1.tar.gz
 sudo sh /config/internet-check/install.sh     # crea bot.env y config.env y se detiene
 sudo vi /config/internet-check/bot.env        # token y chat id
 sudo sh /config/internet-check/install.sh     # arranca y deja el arranque automático
