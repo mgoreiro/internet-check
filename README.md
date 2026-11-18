@@ -1,292 +1,294 @@
 # internet-check
 
-Monitor de conexión a Internet para una **Orange Pi Zero 2** (y cualquier Debian con systemd),
-controlado por un **bot de Telegram** y por una **TUI** al estilo Turbo Vision.
+[Español](README.es.md)
 
-- Avisa por Telegram cuando vuelve Internet tras un corte, con la hora de la caída y su duración.
-- Distingue entre caída de Internet, apagón y reinicio solicitado, y calcula la disponibilidad.
-- Bot bidireccional con menú de botones: estado, test de velocidad, IP pública, historiales,
-  dispositivos de la red, Wake-on-LAN y reinicio remoto.
-- Gráficas PNG, exportación a CSV, aviso de versión nueva y varios usuarios con permisos
-  (administradores y solo consulta).
-- Calidad de la conexión (latencia, jitter, pérdida y DNS), salud de la Pi (temperatura, memoria,
-  disco) e **informes** automáticos diarios y semanales.
-- Avisos automáticos: test de velocidad programado, cambio de IP pública, dispositivos nuevos,
-  conexión degradada, fallo de DNS y alarmas de salud del equipo.
-- Solo **Python 3 estándar**: sin dependencias, sin `pip`, sin root para comprobar la conexión.
+An Internet-connection monitor for an **Orange Pi Zero 2** (and any Debian with systemd), controlled by a
+**Telegram bot** and by a **TUI** in the style of Turbo Vision.
 
-> Autor: **Miguel González Oreiro** · Licencia: [GPL-3.0-or-later](LICENSE)
+- Tells you on Telegram when the Internet comes back after an outage, with the time it went down and how long it lasted.
+- Tells an Internet outage, a power cut and a requested reboot apart, and works out availability.
+- Two-way bot with a button menu: status, speed test, public IP, histories, devices on the network,
+  Wake-on-LAN and remote reboot.
+- PNG charts, CSV export, new-version notice and several users with permissions
+  (administrators and read-only).
+- Connection quality (latency, jitter, loss and DNS), Pi health (temperature, memory,
+  disk) and automatic daily and weekly **reports**.
+- Automatic alerts: scheduled speed test, public IP change, new devices,
+  degraded connection, DNS failure and device health alarms.
+- **Standard-library Python 3 only**: no dependencies, no `pip`, no root needed to check the connection.
+
+> The bot's menu, commands and messages, and the TUI, are in Spanish for now. This README keeps the command names as they are in the bot.
+
+> Author: **Miguel González Oreiro** · License: [GPL-3.0-or-later](LICENSE)
 
 ---
 
-## Índice
-1. [Instalación](#instalación)
-2. [Configuración](#configuración)
-3. [Bot de Telegram](#bot-de-telegram)
-4. [Avisos automáticos](#avisos-automáticos)
-5. [Alarma cuando se cae la conexión (latido)](#alarma-cuando-se-cae-la-conexión-latido)
+## Contents
+1. [Install](#install)
+2. [Configuration](#configuration)
+3. [Telegram bot](#telegram-bot)
+4. [Automatic alerts](#automatic-alerts)
+5. [Alarm while the connection is down (heartbeat)](#alarm-while-the-connection-is-down-heartbeat)
 6. [TUI](#tui)
-7. [Cómo funciona](#cómo-funciona)
-8. [Privacidad y seguridad](#privacidad-y-seguridad)
-9. [Desarrollo](#desarrollo)
-10. [Licencia y créditos](#licencia-y-créditos)
+7. [How it works](#how-it-works)
+8. [Privacy and security](#privacy-and-security)
+9. [Development](#development)
+10. [License and credits](#license-and-credits)
 
 ---
 
-## Instalación
+## Install
 
-**Requisitos:** Debian, Armbian u otra distribución con `systemd` y Python 3.7 o superior
-(probado en Orange Pi Zero 2 con Debian 12 y Python 3.11).
+**Requirements:** Debian, Armbian or another distribution with `systemd` and Python 3.7 or later
+(tested on an Orange Pi Zero 2 with Debian 12 and Python 3.11).
 
-### 1. Crear el bot de Telegram
-1. En Telegram habla con **@BotFather** → `/newbot` y copia el token.
-2. Escribe cualquier mensaje a tu bot nuevo.
-3. Abre `https://api.telegram.org/bot<TOKEN>/getUpdates` y copia el valor de `chat.id`.
+### 1. Create the Telegram bot
+1. In Telegram talk to **@BotFather** → `/newbot` and copy the token.
+2. Send any message to your new bot.
+3. Open `https://api.telegram.org/bot<TOKEN>/getUpdates` and copy the value of `chat.id`.
 
-### 2. Generar e instalar el paquete
-El paquete se genera en cualquier máquina, también macOS (no necesita `dpkg-deb`):
+### 2. Build and install the package
+The package can be built on any machine, macOS included (it does not need `dpkg-deb`):
 
 ```bash
 ./build-deb.sh 1.7.1
-scp internet-check_1.7.1_all.deb usuario@orangepi:
+scp internet-check_1.7.1_all.deb user@orangepi:
 ```
 
-En la Orange Pi:
+On the Orange Pi:
 
 ```bash
 sudo apt install ./internet-check_1.7.1_all.deb
-sudo nano /etc/internet-check/bot.env      # token y chat id
+sudo nano /etc/internet-check/bot.env      # token and chat id
 sudo systemctl restart internet-check
 journalctl -u internet-check -f
 ```
 
-El instalador crea las configuraciones la primera vez y **nunca las sobrescribe** al actualizar.
-Si vienes de una versión anterior a la 1.3 (con el token en `config.env`), las credenciales se
-mueven solas a `bot.env`.
+The installer creates the configuration files the first time and **never overwrites them** on upgrade.
+If you come from a version older than 1.3 (with the token in `config.env`), the credentials
+move to `bot.env` by themselves.
 
-- Desinstalar: `sudo apt remove internet-check` (`purge` borra además configuración y datos).
-- Probar: desconecta el cable de red un minuto y vuelve a conectarlo; llegará el aviso.
-
----
-
-## Configuración
-
-Hay **dos ficheros** en `/etc/internet-check/`:
-
-| Fichero | Contenido | Permisos |
-|---|---|---|
-| `bot.env` | Credenciales del bot (`TELEGRAM_TOKEN`, `TELEGRAM_CHAT_ID`) | 600, solo root |
-| `config.env` | Todos los demás ajustes (sin secretos) | 644 |
-
-Tras cambiar cualquiera: `sudo systemctl restart internet-check`. Las plantillas con todos los
-ajustes comentados están en `/usr/share/internet-check/`.
-
-### Ajustes de `config.env`
-
-| Variable | Por defecto | Descripción |
-|---|---|---|
-| `DEVICE_NAME` | nombre del equipo | Nombre que aparece en los mensajes |
-| `CHECK_INTERVAL` | `10` | Segundos entre comprobaciones de conexión |
-| `FAIL_THRESHOLD` | `3` | Fallos seguidos para dar la conexión por caída |
-| `CHECK_HOSTS` | `1.1.1.1:53,8.8.8.8:53,9.9.9.9:53` | Destinos TCP de la comprobación |
-| `CHECK_TIMEOUT` | `3` | Segundos de espera por destino |
-| `SPEEDTEST_SERVERS` | Clouvider (Fráncfort, Londres, Ámsterdam) | Backends LibreSpeed (`https://…/backend`), por orden |
-| `SPEEDTEST_SECONDS` | `8` | Duración de la bajada y de la subida |
-| `SPEEDTEST_STREAMS` | `4` | Conexiones paralelas del test |
-| `SPEEDTEST_EVERY_HOURS` | `6` | Test programado; `0` lo desactiva |
-| `SPEED_MIN_DOWN_MBPS` | `0` | Avisa si la bajada queda por debajo; `0` = sin aviso |
-| `IP_CHECK_MINUTES` | `5` | Vigila cambios de IP pública; `0` lo desactiva |
-| `LAN_SCAN_MINUTES` | `10` | Busca dispositivos nuevos; `0` lo desactiva |
-| `LAN_CIDR` | /24 de la interfaz principal | Red a escanear (máximo 1024 direcciones) |
-| `WOL_DEVICES` | vacío | Equipos para Wake-on-LAN: `PC=AA:BB:CC:DD:EE:FF,NAS=11:22:…` |
-| `WOL_BROADCAST` | `255.255.255.255` | Dirección de difusión del paquete mágico |
-| `REBOOT_ENABLED` | `1` | Permite reiniciar desde el bot; `0` lo desactiva |
-| `QUALITY_INTERVAL` | `60` | Segundos entre medidas de calidad; `0` las desactiva |
-| `QUALITY_PROBES` | `10` | Conexiones de prueba por medida |
-| `QUALITY_LOSS_ALERT` | `10` | % de pérdida que se considera conexión degradada |
-| `QUALITY_RTT_ALERT` | `300` | ms de latencia que se considera conexión degradada |
-| `QUALITY_ALERT_BURSTS` | `3` | Medidas seguidas para avisar (y para dar la conexión por recuperada) |
-| `HEALTH_MINUTES` | `5` | Minutos entre lecturas de salud; `0` las desactiva |
-| `HEALTH_TEMP_ALERT` | `75` | °C de CPU a partir de los que se avisa |
-| `HEALTH_DISK_ALERT` | `90` | % de disco usado a partir del que se avisa |
-| `HEALTH_MEM_ALERT` | `90` | % de memoria usada a partir del que se avisa |
-| `RETENTION_DAYS` | `30` | Días que se conservan las medidas de calidad y salud |
-| `REPORT_DAILY_TIME` | `08:00` | Hora del informe diario, **hora local de la Pi**; `off` lo desactiva |
-| `REPORT_WEEKLY_DAY` | `mon` | Día en que el informe diario pasa a ser semanal (`mon`…`sun`); `off` = nunca |
-| `UPDATE_CHECK_HOURS` | `24` | Cada cuántas horas busca una versión nueva en GitHub; `0` lo desactiva |
-| `UPDATE_REPO` | el del proyecto | Repositorio de GitHub donde buscar las releases (`propietario/repositorio`) |
-| `WATCH_TARGETS` | vacío | Equipos y servicios a vigilar: `Nombre=destino,Otro=destino` (ver más abajo) |
-| `WATCH_INTERVAL` | `60` | Segundos entre comprobaciones de los servicios vigilados |
-| `WATCH_FAILS` | `3` | Fallos seguidos para dar un servicio por caído |
-| `PRESENCE_MISSES` | `3` | Escaneos seguidos sin ver un dispositivo vigilado para darlo por fuera |
-| `QUIET_HOURS` | `off` | Horario del modo no molestar, `23:00-07:00` (puede cruzar la medianoche) |
-| `HEARTBEAT_URL` | vacío | URL del servicio de latido que da la alarma de caída (ver más abajo) |
-| `HEARTBEAT_SECONDS` | `60` | Segundos entre latidos |
-
-> **Zona horaria:** las horas de los mensajes y del informe programado son las del sistema. Muchas
-> imágenes de Orange Pi vienen en UTC; ajústala con `sudo timedatectl set-timezone Europe/Madrid`.
-
-Para uso avanzado: `STATE_FILE`, `DB_FILE`, `OUI_FILE`, `INTERNET_CHECK_CONFIG` e
-`INTERNET_CHECK_BOT_CONFIG` cambian las rutas de los ficheros de datos y configuración.
+- Uninstall: `sudo apt remove internet-check` (`purge` also deletes configuration and data).
+- Test it: unplug the network cable for a minute and plug it back in; the alert will arrive.
 
 ---
 
-## Bot de Telegram
+## Configuration
 
-Escribe `/menu` (o cualquier texto) y aparece el menú con botones. También hay comandos:
+There are **two files** in `/etc/internet-check/`:
 
-| Botón | Comando | Qué hace |
+| File | Contents | Permissions |
 |---|---|---|
-| 📊 Estado | `/estado` | Conexión actual, última caída, disponibilidad 24 h / 7 d, uptime, IP y último test |
-| 🚀 Test velocidad | `/velocidad` | Mide latencia, bajada y subida (~20 s) y lo guarda en el histórico |
-| 🌍 IP pública | `/ip` | IP pública actual |
-| 📉 Caídas | `/caidas` | Últimas caídas (internet, apagón o reinicio) y disponibilidad 24 h / 7 d / 30 d |
-| 📈 Velocidad (histórico) | `/historico` | Mini-gráfica de tendencia, medias y últimos tests |
-| 📶 Calidad | `/calidad` | Latencia, jitter, pérdida y DNS: última hora, 24 h y gráfica por hora |
-| 🩺 Salud | `/salud` | Temperatura de CPU, carga, memoria, disco y tamaño de la base de datos |
-| 🖼️ Gráficas | `/graficas` | Imagen PNG de latencia (24 h), pérdida (24 h), velocidad (7 días) o temperatura y memoria (24 h) |
-| 📰 Informe | `/informe` | Resumen de las últimas 24 h, la semana o el mes |
-| 📤 Exportar | `/exportar` | Zip con CSV de caídas, velocidad, calidad y salud (7 días, 30 días o todo) |
-| 🔎 Actualización | `/actualizar` | Busca una versión nueva en GitHub y explica cómo instalarla |
-| 👁️ Vigilancia | `/vigilancia` | Estado y disponibilidad de los servicios vigilados (NAS, router, webs…) |
-| 🏠 Presencia | `/presencia [nombre]` | Quién está en casa; con un nombre, vigila o deja de vigilar a ese dispositivo (admin) |
-| 🏷️ Nombrar | `/nombrar <IP o MAC> <nombre>` | Pone nombre a un dispositivo; sin nombre, lo borra (admin) |
-| 🌙 No molestar | `/silencio [horas\|off]` | Retiene los avisos poco urgentes durante unas horas (admin) |
-| 💓 Latido | `/latido [prueba\|pausa [min]\|reanudar]` | Estado del latido de la alarma de caída, envío de prueba y pausa para probar la alarma (admin) |
-| ❓ Ayuda | `/ayuda` | Lista de comandos y de avisos automáticos |
-| ℹ️ Acerca de | `/acerca` | Versión, autor, licencia y repositorio |
-| 📡 Dispositivos | `/dispositivos` | Escanea la red: IP, fabricante, MAC, nombre NetBIOS y DNS; marca los nuevos con 🆕 |
-| 💡 Encender equipo | `/encender` | Envía un paquete Wake-on-LAN al equipo elegido |
-| 🔄 Reiniciar | `/reiniciar` | Reinicia la Orange Pi tras una confirmación que caduca a los 60 s |
+| `bot.env` | Bot credentials (`TELEGRAM_TOKEN`, `TELEGRAM_CHAT_ID`) | 600, root only |
+| `config.env` | All other settings (no secrets) | 644 |
 
-### Usuarios autorizados
-El bot solo responde a los chats que aparecen en `bot.env`; cualquier otro se ignora y queda
-anotado en el log. Cada respuesta va al chat que la pidió.
+After changing either: `sudo systemctl restart internet-check`. Templates with every
+setting commented are in `/usr/share/internet-check/`.
 
-| Variable | Rol | Permisos |
+### `config.env` settings
+
+| Variable | Default | Description |
 |---|---|---|
-| `TELEGRAM_CHAT_ID` | Administrador principal | Todo, y recibe todos los avisos |
-| `TELEGRAM_ADMINS` | Administradores adicionales | Todo |
-| `TELEGRAM_VIEWERS` | Espectadores | Solo consulta: sin **Encender equipo** ni **Reiniciar** |
+| `DEVICE_NAME` | the machine's name | Name shown in the messages |
+| `CHECK_INTERVAL` | `10` | Seconds between connection checks |
+| `FAIL_THRESHOLD` | `3` | Consecutive failures before the connection counts as down |
+| `CHECK_HOSTS` | `1.1.1.1:53,8.8.8.8:53,9.9.9.9:53` | TCP targets of the check |
+| `CHECK_TIMEOUT` | `3` | Seconds to wait per target |
+| `SPEEDTEST_SERVERS` | Clouvider (Frankfurt, London, Amsterdam) | LibreSpeed backends (`https://…/backend`), in order |
+| `SPEEDTEST_SECONDS` | `8` | Duration of the download and of the upload |
+| `SPEEDTEST_STREAMS` | `4` | Parallel connections of the test |
+| `SPEEDTEST_EVERY_HOURS` | `6` | Scheduled test; `0` disables it |
+| `SPEED_MIN_DOWN_MBPS` | `0` | Alerts if the download falls below this; `0` = no alert |
+| `IP_CHECK_MINUTES` | `5` | Watches for public IP changes; `0` disables it |
+| `LAN_SCAN_MINUTES` | `10` | Looks for new devices; `0` disables it |
+| `LAN_CIDR` | /24 of the main interface | Network to scan (at most 1024 addresses) |
+| `WOL_DEVICES` | empty | Machines for Wake-on-LAN: `PC=AA:BB:CC:DD:EE:FF,NAS=11:22:…` |
+| `WOL_BROADCAST` | `255.255.255.255` | Broadcast address of the magic packet |
+| `REBOOT_ENABLED` | `1` | Allows rebooting from the bot; `0` disables it |
+| `QUALITY_INTERVAL` | `60` | Seconds between quality measurements; `0` disables them |
+| `QUALITY_PROBES` | `10` | Test connections per measurement |
+| `QUALITY_LOSS_ALERT` | `10` | Loss % that counts as a degraded connection |
+| `QUALITY_RTT_ALERT` | `300` | Latency in ms that counts as a degraded connection |
+| `QUALITY_ALERT_BURSTS` | `3` | Consecutive measurements to alert (and to call the connection recovered) |
+| `HEALTH_MINUTES` | `5` | Minutes between health readings; `0` disables them |
+| `HEALTH_TEMP_ALERT` | `75` | CPU °C above which it alerts |
+| `HEALTH_DISK_ALERT` | `90` | Disk usage % above which it alerts |
+| `HEALTH_MEM_ALERT` | `90` | Memory usage % above which it alerts |
+| `RETENTION_DAYS` | `30` | Days the quality and health measurements are kept |
+| `REPORT_DAILY_TIME` | `08:00` | Time of the daily report, **the Pi's local time**; `off` disables it |
+| `REPORT_WEEKLY_DAY` | `mon` | Day on which the daily report becomes weekly (`mon`…`sun`); `off` = never |
+| `UPDATE_CHECK_HOURS` | `24` | Hours between looks for a new version on GitHub; `0` disables it |
+| `UPDATE_REPO` | the project's | GitHub repository to look for releases (`owner/repository`) |
+| `WATCH_TARGETS` | empty | Machines and services to watch: `Name=target,Other=target` (see below) |
+| `WATCH_INTERVAL` | `60` | Seconds between checks of the watched services |
+| `WATCH_FAILS` | `3` | Consecutive failures before a service counts as down |
+| `PRESENCE_MISSES` | `3` | Consecutive scans without seeing a watched device before it counts as away |
+| `QUIET_HOURS` | `off` | Do-not-disturb schedule, `23:00-07:00` (may cross midnight) |
+| `HEARTBEAT_URL` | empty | URL of the heartbeat service that raises the outage alarm (see below) |
+| `HEARTBEAT_SECONDS` | `60` | Seconds between heartbeats |
 
-Son listas de ids de chat separados por comas. Un **grupo** también vale (su id es negativo): todos
-sus miembros tienen el rol del grupo. Con `TELEGRAM_NOTIFY_VIEWERS=1`, los avisos importantes
-(caída y recuperación, reinicio, conexión degradada, fallo de DNS) se copian también a los
-espectadores. Para conocer el id de un chat, escribe al bot y consulta
-`https://api.telegram.org/bot<TOKEN>/getUpdates`.
+> **Time zone:** the times in the messages and in the scheduled report are the system's. Many
+> Orange Pi images ship in UTC; set yours with `sudo timedatectl set-timezone Europe/Madrid`.
 
-### Vigilar equipos y servicios
-Define en `config.env` lo que quieres vigilar, como `Nombre=destino` separados por comas:
+For advanced use: `STATE_FILE`, `DB_FILE`, `OUI_FILE`, `INTERNET_CHECK_CONFIG` and
+`INTERNET_CHECK_BOT_CONFIG` change the paths of the data and configuration files.
+
+---
+
+## Telegram bot
+
+Type `/menu` (or any text) and the button menu appears. There are also commands (the bot's names are in Spanish):
+
+| Button | Command | What it does |
+|---|---|---|
+| 📊 Status | `/estado` | Current connection, last outage, availability 24 h / 7 d, uptime, IP and last test |
+| 🚀 Speed test | `/velocidad` | Measures latency, download and upload (~20 s) and stores it in the history |
+| 🌍 Public IP | `/ip` | Current public IP |
+| 📉 Outages | `/caidas` | Latest outages (Internet, power cut or reboot) and availability 24 h / 7 d / 30 d |
+| 📈 Speed (history) | `/historico` | Mini trend chart, averages and latest tests |
+| 📶 Quality | `/calidad` | Latency, jitter, loss and DNS: last hour, 24 h and an hourly chart |
+| 🩺 Health | `/salud` | CPU temperature, load, memory, disk and database size |
+| 🖼️ Charts | `/graficas` | PNG image of latency (24 h), loss (24 h), speed (7 days) or temperature and memory (24 h) |
+| 📰 Report | `/informe` | Summary of the last 24 h, the week or the month |
+| 📤 Export | `/exportar` | Zip with CSVs of outages, speed, quality and health (7 days, 30 days or all) |
+| 🔎 Update | `/actualizar` | Looks for a new version on GitHub and explains how to install it |
+| 👁️ Watch | `/vigilancia` | Status and availability of the watched services (NAS, router, websites…) |
+| 🏠 Presence | `/presencia [name]` | Who is home; with a name, starts or stops watching that device (admin) |
+| 🏷️ Name | `/nombrar <IP or MAC> <name>` | Names a device; without a name, removes it (admin) |
+| 🌙 Do not disturb | `/silencio [hours\|off]` | Holds back low-urgency alerts for some hours (admin) |
+| 💓 Heartbeat | `/latido [prueba\|pausa [min]\|reanudar]` | Status of the outage-alarm heartbeat, a test send and a pause to test the alarm (admin) |
+| ❓ Help | `/ayuda` | List of commands and automatic alerts |
+| ℹ️ About | `/acerca` | Version, author, license and repository |
+| 📡 Devices | `/dispositivos` | Scans the network: IP, vendor, MAC, NetBIOS and DNS name; marks new ones with 🆕 |
+| 💡 Wake a machine | `/encender` | Sends a Wake-on-LAN packet to the chosen machine |
+| 🔄 Reboot | `/reiniciar` | Reboots the Orange Pi after a confirmation that expires in 60 s |
+
+### Authorized users
+The bot only answers the chats listed in `bot.env`; any other is ignored and written to the log.
+Each answer goes to the chat that asked for it.
+
+| Variable | Role | Permissions |
+|---|---|---|
+| `TELEGRAM_CHAT_ID` | Main administrator | Everything, and receives all alerts |
+| `TELEGRAM_ADMINS` | Additional administrators | Everything |
+| `TELEGRAM_VIEWERS` | Viewers | Read-only: no **Wake a machine** or **Reboot** |
+
+They are comma-separated lists of chat ids. A **group** also works (its id is negative): all its members
+get the group's role. With `TELEGRAM_NOTIFY_VIEWERS=1`, the important alerts (outage and recovery, reboot,
+degraded connection, DNS failure) are copied to the viewers as well. To find a chat's id, write to the bot and
+check `https://api.telegram.org/bot<TOKEN>/getUpdates`.
+
+### Watching machines and services
+Define in `config.env` what you want to watch, as `Name=target` separated by commas:
 
 ```
 WATCH_TARGETS=NAS=192.168.1.50:5000,Router=ping://192.168.1.1,Web=https://example.com
 ```
 
-| Destino | Cómo se comprueba |
+| Target | How it is checked |
 |---|---|
-| `host:puerto` o `tcp://host:puerto` | Conexión TCP |
-| `ping://host` | `ping` del sistema (si está instalado) |
-| `http://…` / `https://…` | Petición GET; falla con error de red o código ≥ 400 (los 401 y 403 cuentan como «responde») |
+| `host:port` or `tcp://host:port` | TCP connection |
+| `ping://host` | The system `ping` (if installed) |
+| `http://…` / `https://…` | GET request; fails on a network error or a code ≥ 400 (401 and 403 count as "answering") |
 
-Tras `WATCH_FAILS` fallos seguidos (3 por defecto) avisa de la caída, y al recuperarse avisa con su
-duración. Estos avisos **llegan siempre**, también en modo no molestar. Los destinos que no son de la
-red local no se comprueban mientras no hay Internet, para no dar falsas alarmas. La disponibilidad de
-cada servicio aparece en `/vigilancia` y en los informes. Las URL pueden llevar parámetros secretos:
-en los mensajes solo se muestra el nombre del servidor.
+After `WATCH_FAILS` consecutive failures (3 by default) it alerts of the outage, and when it recovers it alerts
+with the duration. These alerts **always arrive**, also in do-not-disturb mode. Targets outside the local
+network are not checked while there is no Internet, to avoid false alarms. The availability of each service
+appears in `/vigilancia` and in the reports. URLs may carry secret parameters: only the host name is shown in
+messages.
 
-### Nombres y presencia de dispositivos
-- **`/nombrar 192.168.1.20 Móvil de Ana`** guarda un nombre (hasta 40 caracteres) que sustituye al
-  nombre técnico en las listas, avisos e informes. Admite IP, MAC completa o parte del nombre.
-- **`/presencia Ana`** activa o desactiva el aviso de llegada y salida de ese dispositivo
-  («🏠 Ana ha llegado a casa», «🚪 Ana se ha ido»). Se da por fuera tras `PRESENCE_MISSES` escaneos
-  seguidos sin verlo (unos 30 min por defecto). Algunos móviles duermen el wifi y pueden aparecer
-  fuera estando en casa; ajusta `PRESENCE_MISSES` si te molesta.
+### Device names and presence
+- **`/nombrar 192.168.1.20 Ana's phone`** saves a name (up to 40 characters) that replaces the technical
+  name in lists, alerts and reports. It accepts an IP, a full MAC or part of the name.
+- **`/presencia Ana`** turns on or off the arrival and departure alert for that device
+  ("🏠 Ana has arrived home", "🚪 Ana has left"). It counts as away after `PRESENCE_MISSES` consecutive scans
+  without seeing it (about 30 min by default). Some phones put wifi to sleep and can show as
+  away while at home; adjust `PRESENCE_MISSES` if it bothers you.
 
-### Modo no molestar
-Con `QUIET_HOURS=23:00-07:00` (horario fijo) o `/silencio 8` (manual, 8 horas), los avisos poco
-urgentes —dispositivos nuevos, velocidad baja, degradación, DNS, temperatura/disco/memoria, cambio de
-IP, llegadas y salidas— **se retienen y se entregan juntos en un resumen** al terminar. El informe
-programado y el aviso de versión nueva esperan a que termine. **Siguen llegando siempre** las caídas de
-Internet, los reinicios y las caídas de servicios vigilados.
+### Do-not-disturb mode
+With `QUIET_HOURS=23:00-07:00` (fixed schedule) or `/silencio 8` (manual, 8 hours), the low-urgency alerts
+(new devices, low speed, degradation, DNS, temperature/disk/memory, IP change, arrivals and departures)
+**are held back and delivered together in a summary** when it ends. The scheduled report and the new-version
+notice wait until it ends. **Always delivered**: Internet outages, reboots and outages of watched services.
 
-### Gráficas, exportación y versión nueva
-- **Gráficas:** imágenes PNG dibujadas por el propio programa, sin librerías externas.
-- **Exportar:** un `.zip` con `caidas.csv`, `velocidad.csv`, `calidad.csv` y `salud.csv` (UTF-8
-  con BOM, para que Excel respete los acentos) y un `LEEME.txt`. La calidad y la salud solo existen
-  durante `RETENTION_DAYS`.
-- **Actualización:** consulta la última release de GitHub y avisa una sola vez de cada versión
-  nueva (`UPDATE_CHECK_HOURS`). **Nunca instala nada por su cuenta**: te da el comando para hacerlo.
+### Charts, export and new version
+- **Charts:** PNG images drawn by the program itself, with no external libraries.
+- **Export:** a `.zip` with `caidas.csv`, `velocidad.csv`, `calidad.csv` and `salud.csv` (UTF-8
+  with BOM, so Excel keeps the accents) and a `LEEME.txt`. Quality and health exist only for
+  `RETENTION_DAYS`.
+- **Update:** it checks GitHub's latest release and alerts once for each new version
+  (`UPDATE_CHECK_HOURS`). It **never installs anything by itself**: it gives you the command to do it.
 
-### Dispositivos: fabricante y nombres
-- **Fabricante:** búsqueda por MAC en la base del IEEE (MA-L, MA-M y MA-S, unas 54.000 entradas).
-  Los móviles con MAC aleatoria salen como «MAC privada (aleatoria)», porque esa MAC no
-  identifica al fabricante.
-- **NetBIOS:** consulta `NBSTAT` por UDP 137; responden Windows, Samba y muchas impresoras y NAS.
-- **DNS:** nombre inverso, si el router lo publica.
+### Devices: vendor and names
+- **Vendor:** a lookup by MAC in the IEEE database (MA-L, MA-M and MA-S, about 54,000 entries).
+  Phones with a random MAC show as "Private MAC (random)", because that MAC does not
+  identify the manufacturer.
+- **NetBIOS:** `NBSTAT` query over UDP 137; Windows, Samba and many printers and NAS answer.
+- **DNS:** reverse name, if the router publishes it.
 
 ### Wake-on-LAN
-Define los equipos en `config.env`:
+Define the machines in `config.env`:
 
 ```
 WOL_DEVICES=PC=AA:BB:CC:DD:EE:FF,NAS=11:22:33:44:55:66
 ```
 
-El botón 💡 mostrará un botón por equipo. El equipo debe tener Wake-on-LAN activado y estar en
-la misma red.
+The 💡 button will show one button per machine. The machine must have Wake-on-LAN enabled and be on the
+same network.
 
-### Reinicio remoto
-El botón 🔄 pregunta «¿Reiniciar?» con ✅ / ❌. Al volver, el bot avisa con el tiempo que tardó y
-el reinicio queda en el historial de caídas con su propio icono (no cuenta como apagón).
-
----
-
-## Avisos automáticos
-
-- **Internet recuperado**, con hora de caída y duración.
-- **Reinicio tras apagón**: si la Pi arranca y el último latido es antiguo, avisa de cuánto estuvo
-  sin servicio. Una parada limpia (`apt`, `systemctl stop`) no se confunde con un apagón.
-- **Test de velocidad programado** cada `SPEEDTEST_EVERY_HOURS`. Con `SPEED_MIN_DOWN_MBPS` avisa
-  si la bajada queda por debajo del umbral.
-- **Cambio de IP pública**, comprobada cada `IP_CHECK_MINUTES`.
-- **Dispositivo nuevo en la red**, con escaneo cada `LAN_SCAN_MINUTES`. La primera pasada solo
-  memoriza lo que hay, sin avisar.
-- **Conexión degradada**: si la pérdida o la latencia superan los umbrales durante varias medidas
-  seguidas, avisa; otro aviso indica cuándo se estabiliza. Un corte total no cuenta como
-  degradación (lo gestiona el aviso de caída).
-- **DNS caído**: avisa si hay Internet pero el resolutor del sistema no responde.
-- **Salud del equipo**: avisa una vez al superar el umbral de temperatura, disco o memoria, y otra
-  al normalizarse.
-- **Informe programado** a `REPORT_DAILY_TIME`: diario, y semanal el día `REPORT_WEEKLY_DAY`.
-  Resume disponibilidad, caídas, velocidad, calidad, estado del equipo y dispositivos nuevos. Si la
-  Pi estaba apagada a esa hora, se envía al arrancar.
+### Remote reboot
+The 🔄 button asks "Reboot?" with ✅ / ❌. When it comes back, the bot reports how long it took and
+the reboot is recorded in the outage history with its own icon (it does not count as a power cut).
 
 ---
 
-## Alarma cuando se cae la conexión (latido)
+## Automatic alerts
 
-El aviso de «Internet recuperado» llega al volver la conexión, porque **con Internet cortado la Pi no
-puede escribir a Telegram**. Para tener una alarma *mientras* está caída hay que darle la vuelta: la Pi
-avisa cada minuto a un servicio externo (un «latido») y es ese servicio quien manda la alarma a
-Telegram cuando los latidos dejan de llegar. También avisa si la Pi se apaga o se cuelga.
+- **Internet recovered**, with the time it went down and the duration.
+- **Reboot after a power cut:** if the Pi starts and the last heartbeat is old, it says how long it was
+  out of service. A clean stop (`apt`, `systemctl stop`) is not mistaken for a power cut.
+- **Scheduled speed test** every `SPEEDTEST_EVERY_HOURS`. With `SPEED_MIN_DOWN_MBPS` it alerts
+  if the download falls below the threshold.
+- **Public IP change**, checked every `IP_CHECK_MINUTES`.
+- **New device on the network**, scanned every `LAN_SCAN_MINUTES`. The first pass only memorizes what is
+  there, without alerting.
+- **Degraded connection:** if loss or latency exceed the thresholds for several consecutive
+  measurements, it alerts; another alert says when it settles. A total outage does not count as
+  degradation (the outage alert handles it).
+- **DNS down:** it alerts if there is Internet but the system resolver does not answer.
+- **Device health:** it alerts once when the temperature, disk or memory threshold is exceeded, and again
+  when it returns to normal.
+- **Scheduled report** at `REPORT_DAILY_TIME`: daily, and weekly on `REPORT_WEEKLY_DAY`.
+  It summarizes availability, outages, speed, quality, device state and new devices. If the
+  Pi was off at that time, it is sent on startup.
 
-Con [Healthchecks.io](https://healthchecks.io) (gratuito, de código abierto):
-1. Crea una cuenta y un *check* nuevo con periodo de **1 minuto** y margen (*grace time*) de **2–3 minutos**.
-   Ese margen es el retraso tras el que salta la alarma.
-2. En *Integrations*, añade **Telegram** y asígnalo al check.
-3. Copia la *ping URL* del check y ponla en `config.env`:
+---
+
+## Alarm while the connection is down (heartbeat)
+
+The "Internet recovered" alert arrives when the connection returns, because **with the Internet down the Pi
+cannot write to Telegram**. To get an alarm *while* it is down you have to turn it around: the Pi
+pings an external service every minute (a "heartbeat"), and it is that service that sends the alarm to
+Telegram when the heartbeats stop arriving. It also alerts if the Pi powers off or hangs.
+
+With [Healthchecks.io](https://healthchecks.io) (free, open source):
+1. Create an account and a new *check* with a **1-minute** period and a **2–3 minute** grace time.
+   That grace time is the delay after which the alarm fires.
+2. In *Integrations*, add **Telegram** and assign it to the check.
+3. Copy the check's *ping URL* and put it in `config.env`:
    ```
-   HEARTBEAT_URL=https://hc-ping.com/tu-codigo-secreto
+   HEARTBEAT_URL=https://hc-ping.com/your-secret-code
    ```
 4. `sudo systemctl restart internet-check`.
 
-También sirve cualquier servicio que reciba una petición GET periódica, como un monitor de tipo
-*Push* de Uptime Kuma. La URL lleva un código secreto: no se escribe nunca en los logs. `/estado`
-muestra si el latido se está entregando.
+Any service that receives a periodic GET request also works, such as a *Push* monitor in Uptime Kuma. The
+URL carries a secret code: it is never written to the logs. `/estado` shows whether the heartbeat is being
+delivered.
 
-**Probar la alarma sin tocar cables:** escribe `/latido pausa 5` al bot. Los latidos se detienen
-5 minutos (máximo 60; se reanudan solos, o antes con `/latido reanudar`) y, pasado el margen que
-configuraste en el servicio, te llegará su alarma por Telegram. `/latido prueba` envía un latido
-suelto y dice si se entregó. La pausa solo vive en memoria: un reinicio del servicio la cancela.
+**Test the alarm without touching cables:** type `/latido pausa 5` to the bot. Heartbeats stop for
+5 minutes (maximum 60; they resume on their own, or earlier with `/latido reanudar`) and, after the grace
+time you set in the service, its alarm reaches you on Telegram. `/latido prueba` sends a single heartbeat and
+says whether it was delivered. The pause lives only in memory: restarting the service cancels it.
 
 ## TUI
 
@@ -294,114 +296,113 @@ suelto y dice si se entregó. La pausa solo vive en memoria: un reinicio del ser
 internet-check-tui
 ```
 
-Interfaz de terminal al estilo **Turbo Vision**: escritorio sombreado, barra de menú con
-desplegables, ventanas con borde doble y sombra, diálogos con botón y barra de estado.
+A terminal interface in the **Turbo Vision** style: shaded desktop, menu bar with drop-downs,
+double-bordered windows with shadow, dialogs with buttons and a status bar.
 
-| Tecla | Acción |
+| Key | Action |
 |---|---|
-| `F10` | Menú (`←` `→` entre menús, `↑` `↓` opciones, `Enter` elegir, `Esc` cerrar) |
-| `F1` | Ayuda (también en el menú **Ayuda** → *Contenido*, *Teclas y atajos* y *Acerca de…*) |
-| `F2` / `F5` / `F6` / `F7` | Estado / historial de caídas / histórico de velocidad / dispositivos |
-| `F8` / `F9` | Calidad de la conexión / salud de la Pi |
-| `F3` / `F4` | Test de velocidad / IP pública (se envían además al bot) |
-| `Enter` | Abre la opción de la lista · `q` o `Esc` sale |
+| `F10` | Menu (`←` `→` between menus, `↑` `↓` options, `Enter` choose, `Esc` close) |
+| `F1` | Help (also in the **Ayuda** menu → *Contenido*, *Teclas y atajos* and *Acerca de…*) |
+| `F2` / `F5` / `F6` / `F7` | Status / outage history / speed history / devices |
+| `F8` / `F9` | Connection quality / Pi health |
+| `F3` / `F4` | Speed test / public IP (also sent to the bot) |
+| `Enter` | Opens the list option · `q` or `Esc` quits |
 
-El menú **Informes** abre el resumen diario, semanal o mensual y exporta el histórico a CSV (se envía
-al bot, o se guarda en la carpeta actual si no hay bot). **Ayuda → Buscar actualización** consulta
-GitHub. El lanzador se relanza con `sudo` para poder leer `bot.env`.
+The **Informes** menu opens the daily, weekly or monthly summary and exports the history to CSV (sent to
+the bot, or saved in the current folder if there is no bot). **Ayuda → Buscar actualización** checks
+GitHub. The launcher relaunches itself with `sudo` to be able to read `bot.env`.
 
 ---
 
-## Cómo funciona
+## How it works
 
-- **Detección:** cada `CHECK_INTERVAL` segundos abre una conexión TCP a los destinos de
-  `CHECK_HOSTS`. Tras `FAIL_THRESHOLD` fallos seguidos da la conexión por caída y, al volver,
-  avisa. Si Telegram no responde al recuperar, reintenta cada 15 s hasta enviarlo.
-- **Calidad:** cada `QUALITY_INTERVAL` s lanza una ráfaga de `QUALITY_PROBES` conexiones TCP y mide
-  latencia, jitter y pérdida, y comprueba que el DNS resuelve. Los resultados se guardan para los
-  informes y alimentan los avisos de degradación.
-- **Datos:** caídas, tests de velocidad, calidad, salud y dispositivos se guardan en SQLite
+- **Detection:** every `CHECK_INTERVAL` seconds it opens a TCP connection to the `CHECK_HOSTS` targets.
+  After `FAIL_THRESHOLD` consecutive failures it counts the connection as down and, when it returns,
+  alerts. If Telegram does not answer on recovery, it retries every 15 s until it is sent.
+- **Quality:** every `QUALITY_INTERVAL` s it fires a burst of `QUALITY_PROBES` TCP connections and measures
+  latency, jitter and loss, and checks that DNS resolves. The results are stored for the
+  reports and feed the degradation alerts.
+- **Data:** outages, speed tests, quality, health and devices are stored in SQLite
   (`/var/lib/internet-check/data.db`).
-- **Disponibilidad:** se calcula sobre la ventana pedida, acotada al inicio de la monitorización.
+- **Availability:** computed over the requested window, bounded by the start of monitoring.
 
-Detalles de módulos, hilos y esquema de datos en [docs/arquitectura.md](docs/arquitectura.md).
-
----
-
-## Privacidad y seguridad
-
-- El token vive en `bot.env` (600, solo root) y nunca aparece en logs ni en `config.env`.
-- El bot ignora cualquier chat distinto de `TELEGRAM_CHAT_ID`. El reinicio exige confirmación con
-  caducidad, de modo que un botón antiguo no puede reiniciar el equipo.
-- El servicio se ejecuta como root (necesario para reiniciar el sistema). Si no quieres esa
-  función, pon `REBOOT_ENABLED=0`.
-- **Servicios de terceros contactados**, sin telemetría de ningún tipo:
-  - Telegram (`api.telegram.org`): mensajes del bot.
-  - `api.ipify.org`, `ifconfig.me`, `icanhazip.com`: para conocer la IP pública.
-  - Servidores LibreSpeed de Clouvider: solo durante el test de velocidad.
-  - El servicio de latido que elijas (`HEARTBEAT_URL`): recibe una petición por minuto; es opcional.
-  - `api.github.com`: para buscar versiones nuevas; solo se envía una petición anónima de lectura
-    (sin datos tuyos ni de la instalación). Se desactiva con `UPDATE_CHECK_HOURS=0`.
-- El escaneo de la red es local (ARP, NetBIOS y DNS inverso) y sus resultados no salen de la Pi,
-  salvo lo que tú pidas al bot.
+Details of modules, threads and the data schema are in [docs/arquitectura.md](docs/arquitectura.md) (in Spanish).
 
 ---
 
-## Desarrollo
+## Privacy and security
 
-Sin dependencias: basta Python 3.7+.
+- The token lives in `bot.env` (600, root only) and never appears in logs or in `config.env`.
+- The bot ignores any chat other than those authorized. The reboot requires a confirmation with an
+  expiry, so an old button cannot reboot the machine.
+- The service runs as root (needed to reboot the system). If you do not want that
+  feature, set `REBOOT_ENABLED=0`.
+- **Third-party services contacted**, with no telemetry of any kind:
+  - Telegram (`api.telegram.org`): the bot's messages.
+  - `api.ipify.org`, `ifconfig.me`, `icanhazip.com`: to learn the public IP.
+  - Clouvider's LibreSpeed servers: only during the speed test.
+  - The heartbeat service you choose (`HEARTBEAT_URL`): receives one request per minute; it is optional.
+  - `api.github.com`: to look for new versions; only an anonymous read request is sent
+    (no data about you or the installation). Disable it with `UPDATE_CHECK_HOURS=0`.
+- The network scan is local (ARP, NetBIOS and reverse DNS) and its results do not leave the Pi,
+  except what you ask the bot for.
+
+---
+
+## Development
+
+No dependencies: Python 3.7+ is enough.
 
 ```bash
-# Demonio y bot, con datos en una carpeta temporal
+# Daemon and bot, with data in a temporary folder
 export TELEGRAM_TOKEN=... TELEGRAM_CHAT_ID=... DB_FILE=/tmp/ic/data.db STATE_FILE=/tmp/ic/state.json
 python3 monitor.py
 
-# TUI (lee bot.env y config.env, o las variables de entorno)
+# TUI (reads bot.env and config.env, or the environment variables)
 python3 tui.py
 
-# Paquete .deb
+# .deb package
 ./build-deb.sh 1.7.1
 
-# Regenerar la base de fabricantes con los CSV del IEEE
-python3 -I tools/build_oui.py <carpeta con oui.csv, mam.csv y oui36.csv>
+# Regenerate the vendor database from the IEEE CSVs
+python3 -I tools/build_oui.py <folder with oui.csv, mam.csv and oui36.csv>
 ```
 
-| Archivo | Función |
+| File | Role |
 |---|---|
-| `monitor.py` | Demonio: detección de caídas y arranque del bot y las tareas |
-| `bot.py` | Bot de Telegram: menú, acciones y reinicio |
-| `jobs.py` | Tareas periódicas: test programado, IP y dispositivos |
-| `reports.py` | Textos de estado, historiales, calidad, salud e informes |
-| `common.py` | Configuración, Telegram, IP pública y test de velocidad |
-| `metrics.py` | Calidad de la conexión (latencia, jitter, pérdida, DNS) y salud de la Pi |
-| `info.py` | Textos de ayuda y «acerca de» (versión, autor, licencia) de la TUI y del bot |
-| `charts.py` | Gráficas PNG sin dependencias (lienzo, fuente de bitmap y codificador PNG) |
-| `export.py` | Exportación del histórico a CSV dentro de un zip |
-| `updates.py` | Búsqueda de versiones nuevas en las releases de GitHub |
-| `watch.py` | Vigilancia de equipos y servicios propios (TCP, ping, HTTP) |
-| `quiet.py` | Modo no molestar: retención de avisos y resumen final |
-| `heartbeat.py` | Latido a un servicio externo para la alarma de caída |
-| `lan.py` | Escaneo de red, fabricantes, NetBIOS y Wake-on-LAN |
-| `db.py` | Almacenamiento SQLite |
-| `tui.py` | Interfaz Turbo Vision |
-| `build-deb.sh`, `packaging/` | Generación del paquete Debian |
+| `monitor.py` | Daemon: outage detection and startup of the bot and the tasks |
+| `bot.py` | Telegram bot: menu, actions and reboot |
+| `jobs.py` | Periodic tasks: scheduled test, IP and devices |
+| `reports.py` | Texts for status, histories, quality, health and reports |
+| `common.py` | Configuration, Telegram, public IP and speed test |
+| `metrics.py` | Connection quality (latency, jitter, loss, DNS) and Pi health |
+| `info.py` | Help and "about" texts (version, author, license) of the TUI and the bot |
+| `charts.py` | Dependency-free PNG charts (canvas, bitmap font and PNG encoder) |
+| `export.py` | Export of the history to CSV inside a zip |
+| `updates.py` | Looking for new versions in GitHub releases |
+| `watch.py` | Watching your own machines and services (TCP, ping, HTTP) |
+| `quiet.py` | Do-not-disturb mode: holding alerts and the final summary |
+| `heartbeat.py` | Heartbeat to an external service for the outage alarm |
+| `lan.py` | Network scan, vendors, NetBIOS and Wake-on-LAN |
+| `db.py` | SQLite storage |
+| `tui.py` | Turbo Vision interface |
+| `build-deb.sh`, `packaging/` | Debian package generation |
 
 ---
 
-## Licencia y créditos
+## License and credits
 
 Copyright © 2026 Miguel González Oreiro <mgoreiro@gmail.com>
 
-Este programa es software libre: puedes redistribuirlo y modificarlo bajo los términos de la
-**GNU General Public License** publicada por la Free Software Foundation, ya sea la versión 3 o
-(a tu elección) cualquier versión posterior. Se distribuye **sin ninguna garantía**; consulta el
-fichero [LICENSE](LICENSE) para más detalles.
+This program is free software: you can redistribute it and modify it under the terms of the
+**GNU General Public License** as published by the Free Software Foundation, either version 3 or
+(at your option) any later version. It is distributed **without any warranty**; see the
+[LICENSE](LICENSE) file for details.
 
-Créditos de terceros:
-- `data/oui.txt.gz` se deriva de los listados públicos de asignación de direcciones MAC del
-  [IEEE Registration Authority](https://standards.ieee.org/products-services/regauth/). Los nombres
-  de fabricante pertenecen a sus titulares; este fichero no está cubierto por el copyright del
-  proyecto.
-- Test de velocidad: protocolo y servidores [LibreSpeed](https://librespeed.org), alojados por
+Third-party credits:
+- `data/oui.txt.gz` is derived from the public MAC address assignment listings of the
+  [IEEE Registration Authority](https://standards.ieee.org/products-services/regauth/). The vendor names
+  belong to their holders; this file is not covered by the project's copyright.
+- Speed test: protocol and servers by [LibreSpeed](https://librespeed.org), hosted by
   Clouvider.
-- La interfaz de la TUI se inspira en Turbo Vision de Borland.
+- The TUI's look is inspired by Borland's Turbo Vision.
