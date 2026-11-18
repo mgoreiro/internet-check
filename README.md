@@ -23,6 +23,8 @@ An Internet-connection monitor for an **Orange Pi Zero 2** (and any Debian with 
 
 ---
 
+![internet-check terminal interface showing outages, speed history and a weekly report (demo data)](https://raw.githubusercontent.com/mgoreiro/internet-check/main/docs/demo.gif)
+
 ## Contents
 1. [Install](#install)
 2. [Configuration](#configuration)

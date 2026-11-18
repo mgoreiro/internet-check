@@ -21,6 +21,8 @@ controlado por un **bot de Telegram** y por una **TUI** al estilo Turbo Vision.
 
 ---
 
+![Interfaz de terminal de internet-check con caídas, histórico de velocidad e informe semanal (datos de demostración)](https://raw.githubusercontent.com/mgoreiro/internet-check/main/docs/demo.gif)
+
 ## Índice
 1. [Instalación](#instalación)
 2. [Configuración](#configuración)
