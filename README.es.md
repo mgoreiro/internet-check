@@ -25,15 +25,16 @@ controlado por un **bot de Telegram** y por una **TUI** al estilo Turbo Vision.
 
 ## Índice
 1. [Instalación](#instalación)
-2. [Configuración](#configuración)
-3. [Bot de Telegram](#bot-de-telegram)
-4. [Avisos automáticos](#avisos-automáticos)
-5. [Alarma cuando se cae la conexión (latido)](#alarma-cuando-se-cae-la-conexión-latido)
-6. [TUI](#tui)
-7. [Cómo funciona](#cómo-funciona)
-8. [Privacidad y seguridad](#privacidad-y-seguridad)
-9. [Desarrollo](#desarrollo)
-10. [Licencia y créditos](#licencia-y-créditos)
+2. [En un router (EdgeRouter / OpenWrt)](#en-un-router-edgerouter--openwrt)
+3. [Configuración](#configuración)
+4. [Bot de Telegram](#bot-de-telegram)
+5. [Avisos automáticos](#avisos-automáticos)
+6. [Alarma cuando se cae la conexión (latido)](#alarma-cuando-se-cae-la-conexión-latido)
+7. [TUI](#tui)
+8. [Cómo funciona](#cómo-funciona)
+9. [Privacidad y seguridad](#privacidad-y-seguridad)
+10. [Desarrollo](#desarrollo)
+11. [Licencia y créditos](#licencia-y-créditos)
 
 ---
 
@@ -70,6 +71,17 @@ mueven solas a `bot.env`.
 
 - Desinstalar: `sudo apt remove internet-check` (`purge` borra además configuración y datos).
 - Probar: desconecta el cable de red un minuto y vuelve a conectarlo; llegará el aviso.
+
+---
+
+## En un router (EdgeRouter / OpenWrt)
+
+Hay ports reducidos, con todo en memoria (sin base de datos, gráficas ni TUI), para routers pequeños:
+
+- [`edgerouter/`](edgerouter/README.md): Ubiquiti EdgeRouter (ER-X) con EdgeOS, Python 2.7.
+- [`openwrt/`](openwrt/README.md): ER-X u otros routers con OpenWrt, Python 3 (servicio `procd`). Aún sin probar en hardware real.
+
+Cada carpeta tiene su propio `build.sh` y su guía de instalación.
 
 ---
 
