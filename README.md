@@ -27,15 +27,16 @@ An Internet-connection monitor for an **Orange Pi Zero 2** (and any Debian with 
 
 ## Contents
 1. [Install](#install)
-2. [Configuration](#configuration)
-3. [Telegram bot](#telegram-bot)
-4. [Automatic alerts](#automatic-alerts)
-5. [Alarm while the connection is down (heartbeat)](#alarm-while-the-connection-is-down-heartbeat)
-6. [TUI](#tui)
-7. [How it works](#how-it-works)
-8. [Privacy and security](#privacy-and-security)
-9. [Development](#development)
-10. [License and credits](#license-and-credits)
+2. [Running on a router (EdgeRouter / OpenWrt)](#running-on-a-router-edgerouter--openwrt)
+3. [Configuration](#configuration)
+4. [Telegram bot](#telegram-bot)
+5. [Automatic alerts](#automatic-alerts)
+6. [Alarm while the connection is down (heartbeat)](#alarm-while-the-connection-is-down-heartbeat)
+7. [TUI](#tui)
+8. [How it works](#how-it-works)
+9. [Privacy and security](#privacy-and-security)
+10. [Development](#development)
+11. [License and credits](#license-and-credits)
 
 ---
 
@@ -72,6 +73,17 @@ move to `bot.env` by themselves.
 
 - Uninstall: `sudo apt remove internet-check` (`purge` also deletes configuration and data).
 - Test it: unplug the network cable for a minute and plug it back in; the alert will arrive.
+
+---
+
+## Running on a router (EdgeRouter / OpenWrt)
+
+There are reduced, in-memory ports (no database, charts or TUI) for small routers:
+
+- [`edgerouter/`](edgerouter/README.md): Ubiquiti EdgeRouter (ER-X) with EdgeOS, Python 2.7.
+- [`openwrt/`](openwrt/README.md): ER-X or other routers running OpenWrt, Python 3 (`procd` service). Not yet tested on real hardware.
+
+Each folder has its own `build.sh` and installation guide.
 
 ---
 
