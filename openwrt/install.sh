@@ -16,12 +16,14 @@ fi
 
 if ! command -v python3 >/dev/null 2>&1; then
     echo "Falta Python 3. Instálalo con:"
-    echo "    opkg update && opkg install python3-light python3-openssl ca-bundle"
-    echo "(con apk en OpenWrt 25+:  apk add python3-light python3-openssl ca-bundle)"
+    echo "    apk update && apk add python3-light python3-urllib python3-openssl python3-logging python3-codecs ca-bundle"
+    echo "(con opkg en OpenWrt 24.10 o anterior:  opkg update && opkg install <los mismos paquetes>)"
     exit 1
 fi
-python3 -c 'import ssl, socket, json, threading, logging.handlers' 2>/dev/null || {
-    echo "A Python le faltan módulos. Prueba: opkg install python3-openssl python3-logging  (o python3 completo)"; exit 1; }
+python3 -c 'import ssl, socket, json, threading, logging.handlers, urllib.request, encodings.idna, gzip, queue, struct, binascii, contextlib, subprocess, glob, signal' 2>/dev/null || {
+    echo "A Python le faltan módulos. Instala: apk add python3-urllib python3-openssl python3-logging python3-codecs  (o con opkg install)"
+    echo "Comprueba cuál falta con: python3 -c 'import urllib.request, ssl, gzip, logging.handlers'"
+    exit 1; }
 
 # Comprobación de TLS y certificados contra Telegram
 python3 - <<'PYEOF' || echo "AVISO: no se pudo abrir https://api.telegram.org desde Python (¿sin Internet o sin ca-bundle?). Revisa antes de seguir."

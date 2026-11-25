@@ -9,8 +9,8 @@ presencia, Wake-on-LAN, reinicio remoto, roles). Todo el estado vive en memoria;
 
 ## Diferencias con la edición EdgeRouter
 
-- Necesita Python 3: `opkg update && opkg install python3-light python3-openssl ca-bundle`
-  (con `apk` en OpenWrt 25+: `apk add ...`). Ocupa unos 10-15 MB de flash.
+- Necesita Python 3: `apk update && apk add python3-light python3-urllib python3-openssl python3-logging python3-codecs ca-bundle`
+  (con `opkg` en OpenWrt 24.10 o anterior: `opkg install ...`). Ocupa unos 10-15 MB de flash.
 - Servicio `procd` (`/etc/init.d/internet-check`) en vez de `post-config.d`; procd relanza el proceso si cae.
 - Ajustes en `/etc/internet-check`, que el instalador añade a `/etc/sysupgrade.conf` para conservarlos al actualizar.
 - El espacio de «flash» se mide sobre `/overlay`.
